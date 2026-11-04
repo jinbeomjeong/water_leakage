@@ -6,7 +6,7 @@ from utils.measurement import connect_pulse_meter
 from utils.pulse_meter import read_pulse_meter_pv
 
 
-# communication settings, see docs/system/sensor/pulse_meter_com_settings.md
+# communication settings, see docs/system_info/sensor/pulse_meter_com_settings.md
 pulse_meter_port: Final[str] = 'COM3'
 pulse_meter_baudrate: Final[int] = 9600  # unit: bps
 pulse_meter_parity: Final[str] = 'N'  # none
