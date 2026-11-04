@@ -69,3 +69,24 @@ def calculate_graph_window_start_time(latest_elapsed_time: float, graph_time_win
         Start time of the x axis, never negative. Unit: second.
     """
     return max(0.0, latest_elapsed_time - graph_time_window)
+
+
+def check_visible_pv_in_range(elapsed_time_arr: np.ndarray, pv_arr: np.ndarray, window_start_time: float,
+                              range_min: float, range_max: float) -> bool:
+    """Check whether every sample visible in the x axis window of the graph is inside a PV range.
+
+    Only the start of the window is compared because the window always reaches the latest sample.
+
+    Args:
+        elapsed_time_arr: Elapsed time of the valid samples, shape (n,). Unit: second.
+        pv_arr: PV of the valid samples, shape (n,), in the unit configured on the device.
+        window_start_time: Start time of the x axis, a sample at this exact time is visible. Unit: second.
+        range_min: Lower limit of the range, a sample at this exact value is inside the range.
+        range_max: Upper limit of the range, a sample at this exact value is inside the range.
+
+    Returns:
+        True if all visible samples are inside the range or no sample is visible, False otherwise.
+    """
+    visible_pv_arr = pv_arr[elapsed_time_arr >= window_start_time]
+
+    return bool(np.all((visible_pv_arr >= range_min) & (visible_pv_arr <= range_max)))

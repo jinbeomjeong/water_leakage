@@ -15,7 +15,8 @@ from pymodbus.exceptions import ModbusException
 from main import (pulse_meter_baudrate, pulse_meter_bytesize, pulse_meter_parity, pulse_meter_port,
                   pulse_meter_stopbits, pulse_meter_timeout, pulse_meter_unit_address)
 from utils.gui_widgets import create_label, create_plot_widget
-from utils.measurement import append_sample, calculate_graph_window_start_time, connect_pulse_meter
+from utils.measurement import (append_sample, calculate_graph_window_start_time, check_visible_pv_in_range,
+                               connect_pulse_meter)
 from utils.pulse_meter import read_pulse_meter_pv
 
 
@@ -23,6 +24,10 @@ from utils.pulse_meter import read_pulse_meter_pv
 graph_time_window: Final[int] = 60  # unit: second
 max_sample_rate: Final[int] = 50  # unit: sample/second, above the measured 22 to 23 so the buffer spans the window
 sample_buffer_capacity: Final[int] = graph_time_window * max_sample_rate
+
+# y axis range while all visible samples are inside it, the y axis fits the visible samples otherwise
+default_y_axis_min: Final[float] = 0.0  # in the unit configured on the device
+default_y_axis_max: Final[float] = 5.0  # in the unit configured on the device
 
 # refresh settings
 graph_redraw_interval: Final[int] = 33  # unit: millisecond, about 30 Hz
@@ -123,6 +128,8 @@ class PulseMeterWindow(QWidget):
                                                 y_axis_width=y_axis_width, graph_time_window=graph_time_window,
                                                 min_width=plot_min_width, min_height=plot_min_height)
         self.__pv_curve = self.__plot_widget.getPlotItem().plot(pen=pg.mkPen(color=pv_line_color, width=pv_line_width))
+        self.__set_default_y_axis_range()
+        self.__is_y_axis_default_range: bool = True
         self.__arrange_window()
 
         # the first cpu_percent call only sets the reference point and its result has no meaning
@@ -230,6 +237,30 @@ class PulseMeterWindow(QWidget):
         window_start_time: float = calculate_graph_window_start_time(latest_elapsed_time=elapsed_time_arr[-1],
                                                                      graph_time_window=graph_time_window)
         self.__plot_widget.getPlotItem().setXRange(window_start_time, window_start_time + graph_time_window, padding=0)
+        self.__update_y_axis_range(elapsed_time_arr=elapsed_time_arr, window_start_time=window_start_time)
+
+    def __set_default_y_axis_range(self) -> None:
+        self.__plot_widget.getPlotItem().setYRange(default_y_axis_min, default_y_axis_max, padding=0)
+
+    def __update_y_axis_range(self, elapsed_time_arr: np.ndarray, window_start_time: float) -> None:
+        should_use_default_range: bool = check_visible_pv_in_range(elapsed_time_arr=elapsed_time_arr,
+                                                                   pv_arr=self.__pv_arr[:self.__sample_count],
+                                                                   window_start_time=window_start_time,
+                                                                   range_min=default_y_axis_min,
+                                                                   range_max=default_y_axis_max)
+
+        # this runs at every redraw, so the view box is only touched when the y axis mode changes
+        if should_use_default_range == self.__is_y_axis_default_range:
+            return
+
+        self.__is_y_axis_default_range = should_use_default_range
+
+        if should_use_default_range:
+            self.__set_default_y_axis_range()
+
+        # setting a y range turned the auto range off, the auto visible setting of the view box is still in effect
+        else:
+            self.__plot_widget.getPlotItem().getViewBox().enableAutoRange(y=True)
 
     def __update_status_labels(self) -> None:
         self.__time_label.setText(self.__read_current_time_text())
