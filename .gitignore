@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .ruff_cache/
 .idea/
+
+# lorawan otaa secrets of the board firmware
+board/header/lorawan_keys.h
