@@ -59,12 +59,25 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 | Flow-Rate Sensor → Pulse Meter | Pulse Train | 단방향 | 센서 빨강: 5번 +12 V, 노랑: 1번 INA, 검정: 4번 0 V | 미연결 |
 | Pulse Meter ↔ LoRa Client Board | RS-485 | 양방향 | MP5Y 7번 A(+), 8번 B(−). Modbus RTU, 9600 bps, 8N2, 국번 1 | 미연결, 통신 미확인 |
 | LoRa Client Board ↔ PC | USB (Virtual COM) | 양방향 | USB CDC, 펌웨어의 `Serial` | 2026-11-04 양방향 확인 |
-| LoRa Client Board ↔ LoRa Gateway | LoRaWAN (KR920) | 양방향 | Class A, OTAA | 펌웨어 미구현, 통신 미확인 |
-| LoRa Gateway ↔ Wi-Fi Router | Ethernet (MQTT) | 양방향 | Work Mode: Packet forwarder, Protocol: LoRa Gateway MQTT Bridge, MQTT Protocol: MQTT ChirpStack 4.x (Protobuf) | 통신 미확인 |
+| LoRa Client Board ↔ LoRa Gateway | LoRaWAN (KR920) | 양방향 | Class A, OTAA, 업링크 FPort 1, 7바이트 페이로드 | 2026-11-17 게이트웨이 내장 네트워크 서버로 Join과 업링크 확인 |
+| LoRa Gateway ↔ Wi-Fi Router | Ethernet (MQTT) | 양방향 | Work Mode: Packet forwarder, Protocol: LoRa Gateway MQTT Bridge, MQTT Protocol: MQTT ChirpStack 4.x (Protobuf) | 이더넷 DHCP 연결 확인 (PC 인터넷 연결 공유 망), MQTT 미설정 |
 | Raspberry Pi 5 ↔ Wi-Fi Router | Ethernet (MQTT, HTTP) | 양방향 | - | 통신 미확인 |
 | User Device ↔ Wi-Fi Router | Wi-Fi (HTTP) | 양방향 | - | 통신 미확인 |
 
-세부 내용은 그림에 없고 관련 문서와 시험에서 가져왔다. 상태는 정리한 날짜 기준이다.
+세부 내용은 그림에 없고 관련 문서와 시험에서 가져왔다. 상태는 각 칸에 날짜가 없으면 정리한 날짜 기준이다.
+
+### 업링크 페이로드
+
+보드가 FPort 1로 보내는 7바이트 페이로드다. 여러 바이트 값은 큰 자리부터 보낸다.
+
+| 바이트 | 내용 |
+|---|---|
+| 0 | 펄스미터 상태: 0 정상, 1 응답 없음, 2 CRC 오류, 3 예외 응답, 4 잘못된 응답 |
+| 1 | 소수점 자릿수, 상태가 정상일 때만 의미가 있다 |
+| 2–5 | PV 원시값(int32), 상태가 정상일 때만 의미가 있다 |
+| 6 | Modbus 예외 코드, 상태가 예외 응답일 때만 의미가 있다 |
+
+예: `01000000000000`은 펄스미터 응답 없음이다. `0002000004D200`은 소수점 2자리, 원시값 1234로 PV 12.34다.
 
 ## 그림에 없는 내용
 
@@ -79,8 +92,10 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 
 | 위치 | 내용 |
 |---|---|
-| `board/board.ino` | 1초마다 PV를 읽어 USB로 출력 |
+| `board/board.ino` | 1초마다 PV를 읽어 USB로 출력, Join 후 30초마다(시험용) 마지막 값을 LoRaWAN으로 송신 |
 | `board/header/pulse_meter.h`, `board/src/pulse_meter.cpp` | 보드에서 RS-485로 펄스미터 읽기 |
+| `board/header/lorawan_link.h`, `board/src/lorawan_link.cpp` | KR920 OTAA Join과 업링크 (SX126x-Arduino) |
+| `board/header/lorawan_keys.example.h` | OTAA 키 파일 양식, 실제 키는 `lorawan_keys.h`(git 제외)에 둔다 |
 | `utils/pulse_meter.py` | PC에서 Modbus로 펄스미터 읽기 (보드를 거치지 않는 구성) |
 
-보드의 LoRa 송신과 라즈베리파이의 ChirpStack, MQTT 브로커 설정, 데이터 수집, 저장, 웹서버 코드는 아직 없다.
+라즈베리파이의 ChirpStack, MQTT 브로커 설정, 데이터 수집, 저장, 웹서버 코드는 아직 없다.

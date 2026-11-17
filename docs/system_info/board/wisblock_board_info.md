@@ -63,8 +63,8 @@ Modbus RS485 센서 → RAK5802 → (UART) → RAK4631 → LoRaWAN(KR920) → �
 ```
 
 1. 센서의 Modbus 슬레이브 주소, 보레이트/패리티, 레지스터 맵 확보
-2. 코어 펌웨어는 RUI3(Arduino BSP) 권장: 읽기 → 패킹 → `api.lorawan.send()`
-3. ChirpStack에 디바이스 등록 (OTAA: DevEUI, AppKey), DevEUI는 RAK4630 라벨에 인쇄됨
+2. 코어 펌웨어: 처음에는 RUI3를 권장했으나, 실제 펌웨어는 RAK nRF52 Arduino BSP(1.3.3)와 SX126x-Arduino(2.0.33)로 작성했다. AT 명령은 쓸 수 없다.
+3. 네트워크 서버에 디바이스 등록 (OTAA: DevEUI, JoinEUI, AppKey). 시험에는 라벨 DevEUI 대신 새로 만든 DevEUI `4A0A4A3FB63B9137`을 쓴다 (2026-11-17 게이트웨이 내장 네트워크 서버로 Join 확인)
 4. 디코더는 ChirpStack 장치 프로파일에 JS로 작성
 
 ### 300~400노드 규모 유의사항
@@ -75,12 +75,12 @@ Modbus RS485 센서 → RAK5802 → (UART) → RAK4631 → LoRaWAN(KR920) → �
 
 ## 6. 미확인 / 다음 확인 사항
 
-- [ ] 코어 H/L 버전: 라벨에 H/L 표기 없음. 한국 KC 인증 마크(`R-R-SrT-RAK4630`)와 한글 제조국 표기가 있어 국내용으로 보이나, 주파수 대역은 구매 내역이나 AT 명령(`AT+BAND=?`)으로 확인 필요
-- [ ] DevEUI: 라벨에 `AC1F09FF FE0?D696` 형태로 인쇄, 중간 한 자리가 매직 글씨에 가려짐. QR코드나 AT 명령(`AT+DEVEUI=?`)으로 확인
+- [x] 코어 H/L 버전: 라벨에 H/L 표기는 없으나, 2026-11-17 KR920으로 게이트웨이와 Join·업링크에 성공해 고주파(H) 버전으로 판단
+- [ ] DevEUI: 라벨에 `AC1F09FF FE0?D696` 형태로 인쇄, 중간 한 자리가 매직 글씨에 가려짐. QR코드로 확인 가능. 지금은 펌웨어에 직접 정한 DevEUI를 쓰므로 필수는 아님
 - [x] 베이스 모델: 뒷면 사진으로 슬롯 A~D 4개와 헤더(BAT, IO2, IO1, AIN1, RX1, TX1, GND, BOOT0 / SDA, SCL, GND, VDD) 확인 → RAK19007과 일치 (모델명 인쇄만 미확인)
 - [ ] RAK5802 위쪽 단자대 A/B 위치
 - [ ] 연결할 센서 모델, Modbus 지원 여부
-- [ ] 업링크 주기
+- [ ] 업링크 주기: 지금 펌웨어는 시험용 30초
 
 ## Sources
 
