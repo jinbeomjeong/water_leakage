@@ -4,4 +4,7 @@ __pycache__/
 .idea/
 
 # lorawan otaa secrets of the board firmware
-board/header/lorawan_keys.h
+src/board/header/lorawan_keys.h
+
+# raspberry pi sudo password
+docs/system_info/chirp_stack_server/sudo_pwd.txt

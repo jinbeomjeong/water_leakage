@@ -1,7 +1,7 @@
 # ThingsFirst LoRa 게이트웨이 TF-GW1 조사 정리
 
 작성일: 2026-11-05
-수정일: 2026-11-17 (기종 확인, 접속 방법, 공장 초기화, 내장 네트워크 서버 시험 추가)
+수정일: 2026-11-18 (ICS 주소 변경, 패킷 포워더로 ChirpStack 연결)
 
 ## 1. 라벨 정보 (사진에서 읽은 내용)
 
@@ -52,11 +52,12 @@
 |---|---|---|
 | Wi-Fi AP | `https://192.168.230.1` | AP가 켜져 있을 때 |
 | 이더넷, DHCP 서버 없음 | `https://169.254.54.51` | PC와 직접 연결. 주소는 MAC 마지막 2바이트(`36:33` → 54.51)에서 정해짐 |
-| 이더넷, DHCP | `https://192.168.137.177` | PC의 인터넷 연결 공유(ICS) 망에 연결했을 때 받은 주소. 고정 아님 |
+| 이더넷, DHCP | `https://192.168.137.63` | PC의 인터넷 연결 공유(ICS) 망에서 받은 주소 (2026-11-18). 고정 아님, 2026-11-17에는 `.177`이었다. 호스트 이름 `RAK7289V2.mshome.net` |
 | USB-C 콘솔 | CH340, 57600-8-N-1 | 부팅 로그 확인, 로그인에는 `root` 비밀번호 필요 |
 
 - 웹 UI는 부팅 후 1분 정도 늦게 뜬다. 그 전에는 ping과 SSH(22)만 응답하고 80/443은 연결이 거부된다.
 - `/api/info`(로그인 불필요)로 펌웨어 버전과 비밀번호 설정 여부(`passwordSet`)를 볼 수 있다.
+- `/api/info`의 `RAKNS`는 패킷 포워더로 바꾼 뒤에도 `true`였다. 작동 모드를 나타내는 값은 아닌 것으로 보인다.
 
 ## 5. 공장 초기화
 
@@ -79,7 +80,7 @@
 | Region | KR920 |
 | Application | `water_leakage`, Application Type UNIFIED, Auto Add Device 켬 |
 | Application EUI | `106ae760df700794` |
-| Application Key | 웹 UI와 `board/header/lorawan_keys.h`(git 제외)에만 둔다 |
+| Application Key | 웹 UI와 `src/board/header/lorawan_keys.h`(git 제외)에만 둔다 |
 
 결과:
 
@@ -87,11 +88,27 @@
 - End Device Packet Capture에서 FPort 1, 페이로드 `01000000000000`(펄스미터 응답 없음) 업링크를 확인했다.
 - 보드와 게이트웨이가 가까워 RSSI가 -40 dBm을 넘는 패킷이 있었다.
 
-## 7. ChirpStack 프로젝트 연결
+## 7. ChirpStack 연결 (2026-11-18)
 
-- KR920 설정 가능
+라즈베리파이의 ChirpStack에 패킷 포워더로 연결했다. 서버 쪽 내용은 [ChirpStack 서버 정리](../chirp_stack_server/chirpstack_server.md)에 있다.
+
+| 항목 | 설정 |
+|---|---|
+| Work mode | Packet forwarder |
+| Frequency plan | Republic of Korea (ROK), KR920 |
+| Protocol | Semtech UDP GWMP Protocol |
+| Server address | `192.168.137.155` (라즈베리파이) |
+| Server port up / down | 1700 / 1700 |
+| 나머지 (Push timeout, Keepalive, Statistic interval, MTU, Secondary LNS, Class B, GPS, Fine timestamp, Packet filter) | 기본값 / 끔 |
+| Gateway EUI | `ac1f09fffe263633` (이더넷 MAC 가운데에 `FFFE`) |
+
+- LoRa Gateway MQTT Bridge 대신 Semtech UDP를 골랐다. 라즈베리파이의 Gateway Bridge가 이미 UDP 1700에서 기다리고 있어 Pi 설정을 바꿀 필요가 없고, MQTT 브로커를 Pi 내부에만 둘 수 있다. 유저 장치가 같은 망에 들어와도 브로커에 접근하지 못한다.
+- ChirpStack에 게이트웨이를 등록한 뒤 Online이 되었고, 보드의 Join과 업링크를 이 게이트웨이로 받았다.
+- 서버 주소가 ICS 주소라 바뀔 수 있다. Wi-Fi 공유기로 옮기면 공유기에서 예약한 Pi 주소로 바꾼다.
+
+참고:
+
 - WisGateOS 2는 패킷 포워더 / Basics Station 모드 지원 (Basics Station 모드는 최대 16채널)
-- 라즈베리파이의 ChirpStack에 연결: 게이트웨이 웹 UI에서 서버 주소 설정, ChirpStack에는 라벨의 GWEUI로 게이트웨이 등록
 - 노드(RAK4630)의 DevEUI도 `AC1F09FF`로 시작하는 같은 RAK 제조 계열
 - 300~400노드를 8채널 한 대로 감당 가능한지는 업링크 주기와 페이로드 크기에 따라 달라짐
 
@@ -100,8 +117,8 @@
 - [ ] 채널 수(8/16)
 - [x] 기종: RAK7289V2
 - [x] 웹 UI 접속 주소와 계정 (4절)
-- [x] 사용할 모드: 패킷 포워더 + LoRa Gateway MQTT Bridge (ChirpStack 4.x, Protobuf). 지금은 시험용으로 내장 네트워크 서버 사용 중
-- [ ] MQTT 브로커 주소: 라즈베리파이 IP, 라즈베리파이 준비 후 설정
+- [x] 사용할 모드: 패킷 포워더 + Semtech UDP, 라즈베리파이 ChirpStack에 연결 (7절). 처음 정한 LoRa Gateway MQTT Bridge에서 바꿨다
+- [x] 서버 주소: 라즈베리파이 `192.168.137.155`, UDP 1700
 - [ ] 게이트웨이 IP 고정 (고정 IP 또는 공유기 DHCP 예약)
 - [ ] 노드 업링크 주기 (용량 계산용). 지금 펌웨어는 시험용 30초
 

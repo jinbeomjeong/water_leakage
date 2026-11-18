@@ -41,7 +41,7 @@ YF-B1-S                           MP5Y-25                  RAK4631 + RAK5802 + R
 | PC | - | Local Monitoring | 보드와 USB로 통신 | - |
 | LoRa Gateway | TF-GW1 | - | 보드와 LoRaWAN으로 통신, Wi-Fi Router와 Ethernet으로 연결 | [TF-GW1 조사 정리](gateway/thingsfirst_tf-gw1_gateway.md) |
 | Wi-Fi Router | - | - | 게이트웨이, 라즈베리파이, User Device를 연결 | - |
-| Raspberry Pi 5 | - | LoRaWAN Network Server, MQTT Broker Server, Data Collection, Web-Server | 네트워크 서버와 MQTT 브로커 운영, 데이터 수집, 웹 제공 | - |
+| Raspberry Pi 5 | - | LoRaWAN Network Server, MQTT Broker Server, Data Collection, Web-Server | 네트워크 서버와 MQTT 브로커 운영, 데이터 수집, 웹 제공 | [ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md) |
 | User Device | - | - | Wi-Fi Router를 거쳐 HTTP로 접속 | - |
 
 LoRa Client Board의 모듈 역할은 다음과 같다.
@@ -59,9 +59,9 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 | Flow-Rate Sensor → Pulse Meter | Pulse Train | 단방향 | 센서 빨강: 5번 +12 V, 노랑: 1번 INA, 검정: 4번 0 V | 미연결 |
 | Pulse Meter ↔ LoRa Client Board | RS-485 | 양방향 | MP5Y 7번 A(+), 8번 B(−). Modbus RTU, 9600 bps, 8N2, 국번 1 | 미연결, 통신 미확인 |
 | LoRa Client Board ↔ PC | USB (Virtual COM) | 양방향 | USB CDC, 펌웨어의 `Serial` | 2026-11-04 양방향 확인 |
-| LoRa Client Board ↔ LoRa Gateway | LoRaWAN (KR920) | 양방향 | Class A, OTAA, 업링크 FPort 1, 7바이트 페이로드 | 2026-11-17 게이트웨이 내장 네트워크 서버로 Join과 업링크 확인 |
-| LoRa Gateway ↔ Wi-Fi Router | Ethernet (MQTT) | 양방향 | Work Mode: Packet forwarder, Protocol: LoRa Gateway MQTT Bridge, MQTT Protocol: MQTT ChirpStack 4.x (Protobuf) | 이더넷 DHCP 연결 확인 (PC 인터넷 연결 공유 망), MQTT 미설정 |
-| Raspberry Pi 5 ↔ Wi-Fi Router | Ethernet (MQTT, HTTP) | 양방향 | - | 통신 미확인 |
+| LoRa Client Board ↔ LoRa Gateway | LoRaWAN (KR920) | 양방향 | Class A, OTAA, LoRaWAN 1.0.2 / RP 1.0.2 rev B, 업링크 FPort 1, 7바이트 페이로드 | 2026-11-18 라즈베리파이 ChirpStack으로 Join과 30초 주기 업링크, 디코딩 확인 |
+| LoRa Gateway ↔ Wi-Fi Router | Ethernet (UDP) | 양방향 | Work Mode: Packet forwarder, Protocol: Semtech UDP GWMP, 서버 라즈베리파이 UDP 1700 | 2026-11-18 PC 인터넷 연결 공유 망에서 확인, 공유기는 미적용 |
+| Raspberry Pi 5 ↔ Wi-Fi Router | Ethernet (HTTP) | 양방향 | ChirpStack 웹 UI 8080, MQTT 브로커는 Pi 내부(127.0.0.1)에서만 | 2026-11-18 PC 인터넷 연결 공유 망에서 확인, 공유기는 미적용 |
 | User Device ↔ Wi-Fi Router | Wi-Fi (HTTP) | 양방향 | - | 통신 미확인 |
 
 세부 내용은 그림에 없고 관련 문서와 시험에서 가져왔다. 상태는 각 칸에 날짜가 없으면 정리한 날짜 기준이다.
@@ -86,16 +86,19 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 - 게이트웨이 전원: DC 12 V 또는 PoE 48 V 중 어느 쪽을 쓸지 그림에 없다.
 - LoRaWAN 설정: Class A, OTAA로 정했다.
 - 네트워크 서버 소프트웨어: 그림에는 역할만 있고, ChirpStack으로 정했다.
+- 게이트웨이 ↔ 라즈베리파이 프로토콜: 그림은 MQTT지만 Semtech UDP로 연결했다. MQTT 브로커를 Pi 내부에만 두기 위해서다 ([게이트웨이 7절](gateway/thingsfirst_tf-gw1_gateway.md)).
+- 지금 망: Wi-Fi 공유기 대신 PC의 인터넷 연결 공유(ICS) 망에 게이트웨이와 라즈베리파이를 유선으로 연결해 시험했다.
 - 데이터 저장: 라즈베리파이의 저장 방식이 그림에 없다.
 
 ## 관련 코드
 
 | 위치 | 내용 |
 |---|---|
-| `board/board.ino` | 1초마다 PV를 읽어 USB로 출력, Join 후 30초마다(시험용) 마지막 값을 LoRaWAN으로 송신 |
-| `board/header/pulse_meter.h`, `board/src/pulse_meter.cpp` | 보드에서 RS-485로 펄스미터 읽기 |
-| `board/header/lorawan_link.h`, `board/src/lorawan_link.cpp` | KR920 OTAA Join과 업링크 (SX126x-Arduino) |
-| `board/header/lorawan_keys.example.h` | OTAA 키 파일 양식, 실제 키는 `lorawan_keys.h`(git 제외)에 둔다 |
-| `utils/pulse_meter.py` | PC에서 Modbus로 펄스미터 읽기 (보드를 거치지 않는 구성) |
+| `src/board/board.ino` | 1초마다 PV를 읽어 USB로 출력, Join 후 30초마다(시험용) 마지막 값을 LoRaWAN으로 송신 |
+| `src/board/header/pulse_meter.h`, `src/board/src/pulse_meter.cpp` | 보드에서 RS-485로 펄스미터 읽기 |
+| `src/board/header/lorawan_link.h`, `src/board/src/lorawan_link.cpp` | KR920 OTAA Join과 업링크 (SX126x-Arduino) |
+| `src/board/header/lorawan_keys.example.h` | OTAA 키 파일 양식, 실제 키는 `lorawan_keys.h`(git 제외)에 둔다 |
+| `src/server/payload_codec.js` | ChirpStack 장치 프로필의 업링크 디코더 |
+| `src/host/utils/pulse_meter.py` | PC에서 Modbus로 펄스미터 읽기 (보드를 거치지 않는 구성) |
 
-라즈베리파이의 ChirpStack, MQTT 브로커 설정, 데이터 수집, 저장, 웹서버 코드는 아직 없다.
+라즈베리파이의 ChirpStack과 MQTT 브로커는 설정해 동작 중이다 ([ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md)). 데이터 수집, 저장, 웹서버 코드는 아직 없다.
