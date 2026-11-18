@@ -1,7 +1,8 @@
 # 시스템 구성도 색인
 
-- 원본: [system_diagram.jpg](system_diagram.jpg)
+- 원본: [system_diagram.jpg](system_diagram.jpg) (`system_diagram.pptx`에서 내보낸 그림)
 - 정리한 날짜: 2026-11-05
+- 수정한 날짜: 2026-11-18 (게이트웨이 구간 UDP로 변경, 라즈베리파이 역할 갱신)
 
 이 문서는 찾아보기용이다. 그림에 있는 내용과 그림에 없는 내용을 구분해 적었다.
 
@@ -14,14 +15,14 @@
                                                            Wi-Fi (HTTP)
                                                                 |
                                                                 v
-                                                           Wi-Fi Router <──Ethernet (MQTT, HTTP)──> Raspberry Pi 5
-                                                                ^                                   Role: LoRaWAN Network Server
-                                                                |                                         MQTT Broker Server
-                                                         Ethernet (MQTT)                                  Data Collection
-                                                                |                                         Web-Server
-                                                                v
+                                                           Wi-Fi Router <──Ethernet (UDP, HTTP)──> Raspberry Pi 5
+                                                                ^                                  Role: LoRaWAN Network Server (ChirpStack)
+                                                                |                                        Gateway Bridge (UDP → MQTT)
+                                                       Ethernet (UDP 1700)                               MQTT Broker (Pi internal only)
+                                                                |                                        Data Collection (planned, via MQTT)
+                                                                v                                        Web-Server (planned)
                                                            LoRa Gateway
-                                                           TF-GW1
+                                                           TF-GW1 (RAK7289V2)
                                                                 ^
                                                                 |
                                                          LoRaWAN (KR920)
@@ -39,9 +40,9 @@ YF-B1-S                           MP5Y-25                  RAK4631 + RAK5802 + R
 | Pulse Meter | MP5Y-25 | - | 펄스를 측정값으로 변환, Modbus RTU로 제공 | [제품 매뉴얼 색인](../manual/pulse_meter_manual.md), [통신 매뉴얼 색인](../manual/pulse_meter_com.md), [통신 설정값](sensor/pulse_meter_com_settings.md) |
 | LoRa Client Board | RAK4631 + RAK5802 + RAK19007 | - | 펄스미터의 값을 읽고 PC, 게이트웨이와 통신 | [WisBlock 보드 정보](board/wisblock_board_info.md) |
 | PC | - | Local Monitoring | 보드와 USB로 통신 | - |
-| LoRa Gateway | TF-GW1 | - | 보드와 LoRaWAN으로 통신, Wi-Fi Router와 Ethernet으로 연결 | [TF-GW1 조사 정리](gateway/thingsfirst_tf-gw1_gateway.md) |
+| LoRa Gateway | TF-GW1 (RAK7289V2) | - | 보드와 LoRaWAN으로 통신, Wi-Fi Router와 Ethernet으로 연결 | [TF-GW1 조사 정리](gateway/thingsfirst_tf-gw1_gateway.md) |
 | Wi-Fi Router | - | - | 게이트웨이, 라즈베리파이, User Device를 연결 | - |
-| Raspberry Pi 5 | - | LoRaWAN Network Server, MQTT Broker Server, Data Collection, Web-Server | 네트워크 서버와 MQTT 브로커 운영, 데이터 수집, 웹 제공 | [ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md) |
+| Raspberry Pi 5 | - | LoRaWAN Network Server (ChirpStack), Gateway Bridge (UDP → MQTT), MQTT Broker (Pi internal only), Data Collection (planned, via MQTT), Web-Server (planned) | 네트워크 서버와 MQTT 브로커 운영 중, 데이터 수집과 웹 제공은 예정 | [ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md) |
 | User Device | - | - | Wi-Fi Router를 거쳐 HTTP로 접속 | - |
 
 LoRa Client Board의 모듈 역할은 다음과 같다.
@@ -60,8 +61,8 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 | Pulse Meter ↔ LoRa Client Board | RS-485 | 양방향 | MP5Y 7번 A(+), 8번 B(−). Modbus RTU, 9600 bps, 8N2, 국번 1 | 미연결, 통신 미확인 |
 | LoRa Client Board ↔ PC | USB (Virtual COM) | 양방향 | USB CDC, 펌웨어의 `Serial` | 2026-11-04 양방향 확인 |
 | LoRa Client Board ↔ LoRa Gateway | LoRaWAN (KR920) | 양방향 | Class A, OTAA, LoRaWAN 1.0.2 / RP 1.0.2 rev B, 업링크 FPort 1, 7바이트 페이로드 | 2026-11-18 라즈베리파이 ChirpStack으로 Join과 30초 주기 업링크, 디코딩 확인 |
-| LoRa Gateway ↔ Wi-Fi Router | Ethernet (UDP) | 양방향 | Work Mode: Packet forwarder, Protocol: Semtech UDP GWMP, 서버 라즈베리파이 UDP 1700 | 2026-11-18 PC 인터넷 연결 공유 망에서 확인, 공유기는 미적용 |
-| Raspberry Pi 5 ↔ Wi-Fi Router | Ethernet (HTTP) | 양방향 | ChirpStack 웹 UI 8080, MQTT 브로커는 Pi 내부(127.0.0.1)에서만 | 2026-11-18 PC 인터넷 연결 공유 망에서 확인, 공유기는 미적용 |
+| LoRa Gateway ↔ Wi-Fi Router | Ethernet (UDP 1700) | 양방향 | Work Mode: Packet forwarder, Protocol: Semtech UDP GWMP, 서버 라즈베리파이 UDP 1700 | 2026-11-18 PC 인터넷 연결 공유 망에서 확인, 공유기는 미적용 |
+| Raspberry Pi 5 ↔ Wi-Fi Router | Ethernet (UDP, HTTP) | 양방향 | 게이트웨이 UDP 1700 수신, ChirpStack 웹 UI 8080. MQTT 브로커는 Pi 내부(127.0.0.1)에서만 | 2026-11-18 PC 인터넷 연결 공유 망에서 확인, 공유기는 미적용 |
 | User Device ↔ Wi-Fi Router | Wi-Fi (HTTP) | 양방향 | - | 통신 미확인 |
 
 세부 내용은 그림에 없고 관련 문서와 시험에서 가져왔다. 상태는 각 칸에 날짜가 없으면 정리한 날짜 기준이다.
@@ -84,11 +85,12 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 - 펄스미터 전원: 24 VAC 또는 24~48 VDC를 별도로 공급해야 한다.
 - 보드 내부 연결: RAK4631과 RAK5802는 UART(`Serial1`)로 연결된다.
 - 게이트웨이 전원: DC 12 V 또는 PoE 48 V 중 어느 쪽을 쓸지 그림에 없다.
-- LoRaWAN 설정: Class A, OTAA로 정했다.
-- 네트워크 서버 소프트웨어: 그림에는 역할만 있고, ChirpStack으로 정했다.
-- 게이트웨이 ↔ 라즈베리파이 프로토콜: 그림은 MQTT지만 Semtech UDP로 연결했다. MQTT 브로커를 Pi 내부에만 두기 위해서다 ([게이트웨이 7절](gateway/thingsfirst_tf-gw1_gateway.md)).
-- 지금 망: Wi-Fi 공유기 대신 PC의 인터넷 연결 공유(ICS) 망에 게이트웨이와 라즈베리파이를 유선으로 연결해 시험했다.
-- 데이터 저장: 라즈베리파이의 저장 방식이 그림에 없다.
+- LoRaWAN 설정: Class A, OTAA, LoRaWAN 1.0.2 / RP 1.0.2 rev B로 정했다.
+- 게이트웨이 작동 모드: Packet forwarder, Protocol은 Semtech UDP GWMP. MQTT Bridge 대신 UDP를 고른 것은 MQTT 브로커를 Pi 내부에만 두기 위해서다 ([게이트웨이 7절](gateway/thingsfirst_tf-gw1_gateway.md)).
+- Pi 내부의 MQTT 흐름: Gateway Bridge가 게이트웨이의 UDP 패킷을 `kr920/gateway/...` 토픽으로 바꿔 ChirpStack에 넘기고, ChirpStack은 디코딩한 업링크를 `application/.../event/up` 토픽으로 내보낸다. ChirpStack v4는 게이트웨이와 MQTT로만 연결하므로 게이트웨이 프로토콜과 관계없이 브로커가 필요하다.
+- 라즈베리파이의 나머지 구성 요소: Redis, SQLite DB, ChirpStack REST API ([ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md)).
+- 지금 망: Wi-Fi 공유기 대신 PC의 인터넷 연결 공유(ICS) 망에 게이트웨이와 라즈베리파이를 유선으로 연결해 시험했다. 그림은 목표 구성(공유기)이다.
+- 데이터 저장: 라즈베리파이의 저장 방식은 아직 정하지 않았다.
 
 ## 관련 코드
 
