@@ -8,7 +8,14 @@ static const unsigned long usb_baudrate = 115200;  // unit: bps
 static const unsigned long io_power_settle_time = 300;  // unit: ms
 static const unsigned long read_interval = 1000;  // unit: ms
 static const unsigned long uplink_interval = 30000;  // unit: ms, short value for testing
-static const uint8_t uplink_payload_size = 7;  // unit: byte
+static const uint8_t uplink_payload_size = 2;  // unit: byte, one flow record
+
+// first byte of a record: sensor type in the upper 4 bits, sensor status in the lower 4 bits
+static const uint8_t sensor_type_flow = 0x0;
+static const uint8_t sensor_type_current = 0x1;  // reserved, the board has no current input yet
+static const uint8_t sensor_status_normal = 0x0;
+static const uint8_t sensor_status_fault = 0x1;
+static const int64_t max_flow_raw = 200;  // unit: 0.1 lpm, values above 20.0 lpm are clamped
 
 static unsigned long last_read_time = 0;  // unit: ms
 static unsigned long last_uplink_time = 0;  // unit: ms
@@ -40,23 +47,53 @@ static void print_reading(PulseMeterStatus status, const PulseMeterReading &read
 }
 
 
-// payload layout, multi-byte values are big endian:
-// byte 0: pulse meter status (0 ok, 1 timeout, 2 crc_error, 3 exception_response, 4 invalid_response)
-// byte 1: decimal places, valid only when the status is ok
-// byte 2-5: raw pv as int32, valid only when the status is ok
-// byte 6: modbus exception code, valid only when the status is exception_response
+// convert the pv to 0.1 lpm units with rounding and clamp it to 0..200
+// the pv unit must be set to lpm on the pulse meter
+static uint8_t get_flow_raw(const PulseMeterReading &reading)
+{
+    int64_t flow_raw = reading.raw_pv;
+
+    if (reading.decimal_places == 0)
+    {
+        flow_raw *= 10;
+    }
+    else
+    {
+        int64_t divisor = 1;
+        for (uint8_t i = 1; i < reading.decimal_places; i++)
+        {
+            divisor *= 10;
+        }
+
+        // round half up only for non-negative values, negative values are clamped to 0 below
+        if (flow_raw > 0)
+        {
+            flow_raw = (flow_raw + divisor/2)/divisor;
+        }
+    }
+
+    if (flow_raw < 0)
+    {
+        return 0;
+    }
+    if (flow_raw > max_flow_raw)
+    {
+        return static_cast<uint8_t>(max_flow_raw);
+    }
+    return static_cast<uint8_t>(flow_raw);
+}
+
+
+// flow record layout:
+// byte 0: sensor type 0x0 in the upper 4 bits, status in the lower 4 bits (0x0 normal, 0x1 fault)
+// byte 1: raw flow in 0.1 lpm (0..200), 0 when the status is fault
 static void build_uplink_payload(PulseMeterStatus status, const PulseMeterReading &reading, uint8_t *payload)
 {
-    const bool is_ok = status == PulseMeterStatus::ok;
-    const uint32_t raw_pv = is_ok ? static_cast<uint32_t>(reading.raw_pv) : 0;
+    const bool is_normal = status == PulseMeterStatus::ok;
+    const uint8_t sensor_status = is_normal ? sensor_status_normal : sensor_status_fault;
 
-    payload[0] = static_cast<uint8_t>(status);
-    payload[1] = is_ok ? reading.decimal_places : 0;
-    payload[2] = raw_pv >> 24;
-    payload[3] = raw_pv >> 16;
-    payload[4] = raw_pv >> 8;
-    payload[5] = raw_pv;
-    payload[6] = status == PulseMeterStatus::exception_response ? reading.exception_code : 0;
+    payload[0] = (sensor_type_flow << 4) | sensor_status;
+    payload[1] = is_normal ? get_flow_raw(reading) : 0;
 }
 
 

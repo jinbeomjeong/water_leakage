@@ -168,5 +168,5 @@ mosquitto_sub -h 127.0.0.1 -t 'application/+/device/+/event/up' -v
 - [ ] Join 지연 원인 확인 (보드와 게이트웨이 거리)
 - [ ] 데이터 수집 프로그램: MQTT `event/up` 구독 → DB 저장
 - [ ] 웹 서버 (유저 장치용 HTTP)
-- [ ] 장치 프로필 Measurements에 `pv` 등록 (펄스미터 연결 후)
+- [ ] 장치 프로필 Measurements에 `flow_lpm` 등록 (펄스미터 연결 후)
 - [ ] ChirpStack 정식 릴리스로 교체 여부
