@@ -1,0 +1,24 @@
+# systemd unit for the flow web server (MQTT -> SQLite -> Flask on port 5000) on the Raspberry Pi
+# install: sudo cp src/server/water-leakage-web.service /etc/systemd/system/
+#          sudo systemctl daemon-reload
+#          sudo systemctl enable --now water-leakage-web.service
+# logs:    journalctl -u water-leakage-web -f
+
+[Unit]
+Description=Water leakage flow web server
+# the listener reconnects on its own, the order only avoids connection warnings right after boot
+After=network-online.target mosquitto.service chirpstack.service
+Wants=network-online.target mosquitto.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/workspace/water_leakage
+ExecStart=/home/pi/miniconda3/envs/python-dev/bin/python -s src/server/web_server.py
+# print log lines to the journal right away instead of buffering them
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
