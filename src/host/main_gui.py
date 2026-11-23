@@ -1,4 +1,8 @@
-"""Show the flow rate of the FT-210 flow meter in a live OpenGL graph with the current time and CPU usage."""
+"""Show the FT-210 flow rate sent by the LoRa client board in a live OpenGL graph with the current time and CPU usage.
+
+The RAK4631 board reads the FT-210 over Modbus RTU and prints the result over its USB virtual COM port, so this
+program only reads text lines from that port. utils/board_link.py describes the line format.
+"""
 import sys
 import time
 from typing import Final
@@ -9,27 +13,34 @@ from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QCloseEvent, QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 import pyqtgraph as pg
-from pymodbus import FramerType
-from pymodbus.client import ModbusSerialClient
-from pymodbus.exceptions import ModbusException
-from main import (flow_meter_baudrate, flow_meter_bytesize, flow_meter_parity, flow_meter_port, flow_meter_stopbits,
-                  flow_meter_timeout, flow_meter_unit_address, flow_rate_decimal_places)
-from utils.flow_meter import read_flow_meter_rate
+import serial
+from utils.board_link import FlowRateLine, ReadErrorLine, parse_board_line
+from utils.graph_samples import append_sample, calculate_graph_window_start_time, check_visible_flow_rate_in_range
 from utils.gui_widgets import create_label, create_plot_widget
-from utils.measurement import (append_sample, calculate_graph_window_start_time, check_visible_flow_rate_in_range,
-                               connect_flow_meter)
 
+
+# board usb settings, the port number can differ per pc and per usb port
+board_port: Final[str] = 'COM6'
+# usb cdc ignores the baud rate, the value matches usb_baudrate in src/board/board.ino
+board_baudrate: Final[int] = 115200  # unit: bps
+# how long one read waits for data, it bounds how late the thread notices an interruption request
+board_read_timeout: Final[float] = 0.1  # unit: second
+# a board line is about 30 bytes, longer data without a line break is garbage and is dropped
+max_board_line_length: Final[int] = 256  # unit: byte
+
+# the value is a 32-bit float, so it is shown with the same number of decimal places as the device front display
+flow_rate_decimal_places: Final[int] = 2
 
 # graph data settings
 graph_time_window: Final[int] = 60  # unit: second
-# one request and response take about 25 ms at 9600 bps 8N1, so the device can not reach this rate and the buffer
-# spans the window, the actual rate with the FT-210 is not measured yet
-max_sample_rate: Final[int] = 50  # unit: sample/second
+# the board prints one reading every 500 ms (2 sample/second), the 2x margin keeps the window full
+# when usb timing jitter makes lines arrive in bursts
+max_sample_rate: Final[int] = 4  # unit: sample/second
 sample_buffer_capacity: Final[int] = graph_time_window * max_sample_rate
 
 # y axis range while all visible samples are inside it, the y axis fits the visible samples otherwise
 default_y_axis_min: Final[float] = 0.0  # unit: LPM
-default_y_axis_max: Final[float] = 5.0  # unit: LPM
+default_y_axis_max: Final[float] = 2.0  # unit: LPM, the LoRaWAN flow record covers 0~2 LPM in 0.01 steps
 
 # refresh settings
 graph_redraw_interval: Final[int] = 33  # unit: millisecond, about 30 Hz
@@ -67,44 +78,87 @@ widest_time_text: Final[str] = '0000-00-00 00:00:00'
 widest_cpu_usage_text: Final[str] = 'CPU 100.0%'
 
 
-class FlowMeterReader(QThread):
-    """Read the flow rate of the flow meter over one connection, as fast as the device answers, on a worker thread.
+class BoardReader(QThread):
+    """Read the lines that the LoRa client board prints over its USB virtual COM port on a worker thread.
 
-    The thread only reads from the device. It ends at the first communication failure, there is no retry.
+    The thread only reads from the board and never writes to it. A failed FT-210 read reported by the board is
+    passed on and reading continues, because the board keeps printing. The thread ends at the first serial port
+    failure such as a failed open or an unplugged cable, there is no retry. Unknown and garbled lines are ignored.
 
     Attributes:
-        sample_read: Emitted per sample with the time since connecting (unit: second) and the flow rate (unit: LPM).
-        read_failed: Emitted once with the exception message when connecting or reading fails.
+        sample_read: Emitted per flow rate line with the time since opening the port (unit: second) and the flow
+            rate (unit: LPM).
+        board_read_failed: Emitted per error line with the error text of the board, for example timeout.
+        port_failed: Emitted once with the exception message when opening or reading the port fails.
     """
 
     sample_read = Signal(float, float)
-    read_failed = Signal(str)
+    board_read_failed = Signal(str)
+    port_failed = Signal(str)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+
+        # received bytes of a line whose line break has not arrived yet
+        self.__partial_line: bytes = b''
 
     def run(self) -> None:
-        """Open the port, read until an interruption is requested or a failure occurs, then close the port."""
-        client = ModbusSerialClient(port=flow_meter_port, framer=FramerType.RTU, baudrate=flow_meter_baudrate,
-                                    parity=flow_meter_parity, stopbits=flow_meter_stopbits,
-                                    bytesize=flow_meter_bytesize, timeout=flow_meter_timeout)
+        """Open the port, read until an interruption is requested or the port fails, then close the port."""
+        board_serial = self.__create_board_serial()
 
-        # always release the port, connecting is inside the try block so that its failure is reported as well
+        # the port is opened inside the try block so that its failure is reported as well
         try:
-            connect_flow_meter(client, port=flow_meter_port, baudrate=flow_meter_baudrate, parity=flow_meter_parity,
-                               stopbits=flow_meter_stopbits, bytesize=flow_meter_bytesize)
+            board_serial.open()
+            opened_time: Final[float] = time.monotonic()
 
-            connected_time: Final[float] = time.monotonic()
-
-            # each request is sent as soon as the previous response arrives to keep the maximum rate
             while not self.isInterruptionRequested():
-                flow_rate: float = read_flow_meter_rate(client, unit_address=flow_meter_unit_address)
-                self.sample_read.emit(time.monotonic() - connected_time, flow_rate)
+                line: str | None = self.__read_line(board_serial)
+                if line is not None:
+                    self.__emit_line(line, elapsed_time=time.monotonic() - opened_time)
 
-        # ModbusException also covers a NaN or infinite flow rate, OSError covers serial port errors,
-        # ValueError covers a response with an unexpected register count
-        except (ModbusException, OSError, ValueError) as error:
-            self.read_failed.emit(str(error))
+        # SerialException is a subclass of OSError, both cover a failed open and a disconnected board
+        except OSError as error:
+            self.port_failed.emit(str(error))
 
         finally:
-            client.close()
+            board_serial.close()
+
+    def __create_board_serial(self) -> serial.Serial:
+        # the port is not given here so that the line states are set before it opens
+        board_serial = serial.Serial(baudrate=board_baudrate, timeout=board_read_timeout)
+        board_serial.port = board_port
+
+        # the tinyusb cdc of the board may not send until dtr is on, pyserial turns both on by default
+        board_serial.dtr = True
+        board_serial.rts = True
+
+        return board_serial
+
+    def __read_line(self, board_serial: serial.Serial) -> str | None:
+        # readline returns the bytes received so far when the timeout expires, so they are kept for the next call
+        self.__partial_line += board_serial.readline()
+
+        if len(self.__partial_line) > max_board_line_length:
+            self.__partial_line = b''
+            return None
+
+        if not self.__partial_line.endswith(b'\n'):
+            return None
+
+        # a garbled byte becomes a replacement character, the parser then rejects the line
+        line: str = self.__partial_line.decode('ascii', errors='replace')
+        self.__partial_line = b''
+
+        return line
+
+    def __emit_line(self, line: str, elapsed_time: float) -> None:
+        board_line = parse_board_line(line)
+
+        if isinstance(board_line, FlowRateLine):
+            self.sample_read.emit(elapsed_time, board_line.flow_rate)
+
+        elif isinstance(board_line, ReadErrorLine):
+            self.board_read_failed.emit(board_line.error_text)
 
 
 class FlowMeterWindow(QWidget):
@@ -158,9 +212,10 @@ class FlowMeterWindow(QWidget):
         self.__status_update_timer.timeout.connect(self.__update_status_labels)
         self.__status_update_timer.start()
 
-        self.__reader = FlowMeterReader(self)
+        self.__reader = BoardReader(self)
         self.__reader.sample_read.connect(self.__store_sample)
-        self.__reader.read_failed.connect(self.__show_read_failure)
+        self.__reader.board_read_failed.connect(self.__show_board_read_failure)
+        self.__reader.port_failed.connect(self.__show_port_failure)
         self.__reader.start()
 
     def closeEvent(self, event: QCloseEvent) -> None:
@@ -172,7 +227,7 @@ class FlowMeterWindow(QWidget):
         self.__graph_redraw_timer.stop()
         self.__status_update_timer.stop()
 
-        # a read in progress finishes first, so this returns after the pymodbus timeout and retries at worst
+        # a read in progress finishes first, so this returns after the board read timeout at worst
         self.__reader.requestInterruption()
         self.__reader.wait()
 
@@ -181,10 +236,7 @@ class FlowMeterWindow(QWidget):
     def __create_flow_rate_label(self) -> QLabel:
         flow_rate_label = create_label(text='Flow rate -- LPM', font_size=flow_rate_font_size,
                                        text_color=primary_text_color)
-
-        font: QFont = flow_rate_label.font()
-        font.setBold(True)
-        flow_rate_label.setFont(font)
+        self.__set_flow_rate_label_style(flow_rate_label, is_error=False)
 
         # the window can not get narrower than this, so the widest flow rate is never cut off
         flow_rate_label.setMinimumWidth(flow_rate_label.fontMetrics().horizontalAdvance(widest_flow_rate_text))
@@ -220,19 +272,30 @@ class FlowMeterWindow(QWidget):
     def __read_current_time_text(self) -> str:
         return time.strftime('%Y-%m-%d %H:%M:%S')
 
+    def __set_flow_rate_label_style(self, flow_rate_label: QLabel, is_error: bool) -> None:
+        font: QFont = flow_rate_label.font()
+        font.setPointSize(flow_rate_error_font_size if is_error else flow_rate_font_size)
+        font.setBold(not is_error)
+        flow_rate_label.setFont(font)
+
+        # a long exception message wraps instead of widening the window
+        flow_rate_label.setWordWrap(is_error)
+
     def __store_sample(self, elapsed_time: float, flow_rate: float) -> None:
+        # a valid sample after a board read failure replaces the error message
+        self.__set_flow_rate_label_style(self.__flow_rate_label, is_error=False)
         self.__flow_rate_label.setText(f'Flow rate {flow_rate:.{flow_rate_decimal_places}f} LPM')
         self.__sample_count = append_sample(elapsed_time_arr=self.__elapsed_time_arr,
                                             flow_rate_arr=self.__flow_rate_arr, sample_count=self.__sample_count,
                                             elapsed_time=elapsed_time, flow_rate=flow_rate)
 
-    def __show_read_failure(self, error_message: str) -> None:
-        font: QFont = self.__flow_rate_label.font()
-        font.setPointSize(flow_rate_error_font_size)
-        font.setBold(False)
-        self.__flow_rate_label.setFont(font)
+    def __show_board_read_failure(self, error_text: str) -> None:
+        # the board keeps reading, so the message stays only until the next valid sample
+        self.__set_flow_rate_label_style(self.__flow_rate_label, is_error=True)
+        self.__flow_rate_label.setText(f'Flow meter read error: {error_text}')
 
-        self.__flow_rate_label.setWordWrap(True)
+    def __show_port_failure(self, error_message: str) -> None:
+        self.__set_flow_rate_label_style(self.__flow_rate_label, is_error=True)
         self.__flow_rate_label.setText(f'Communication error: {error_message}')
 
     def __redraw_graph(self) -> None:

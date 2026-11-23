@@ -108,11 +108,12 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 
 | 위치 | 내용 |
 |---|---|
-| `src/board/board.ino` | 1초마다 순시유량을 읽어 USB로 출력, Join 후 30초마다(시험용) 마지막 값을 LoRaWAN으로 송신 |
+| `src/board/board.ino` | 0.5초마다 순시유량을 읽어 USB로 출력, Join 후 30초마다(시험용) 마지막 값을 LoRaWAN으로 송신 |
 | `src/board/header/flow_meter.h`, `src/board/src/flow_meter.cpp` | 보드에서 RS-485로 FT-210 순시유량 읽기 |
 | `src/board/header/lorawan_link.h`, `src/board/src/lorawan_link.cpp` | KR920 OTAA Join과 업링크 (SX126x-Arduino) |
 | `src/board/header/lorawan_keys.example.h` | OTAA 키 파일 양식, 실제 키는 `lorawan_keys.h`(git 제외)에 둔다 |
 | `src/server/payload_codec.js` | ChirpStack 장치 프로필의 업링크 디코더 |
-| `src/host/utils/flow_meter.py` | PC에서 USB-RS485 어댑터로 FT-210 순시유량 읽기 (보드를 거치지 않는 구성) |
+| `src/host/main_gui.py`, `src/host/utils/board_link.py` | 보드 USB(COM6)의 `flow=` 줄을 읽어 유량 그래프 표시 (y축 기본 0~2 LPM). 실행은 `src/host/run_main_gui.bat` |
+| `src/host/main.py`, `src/host/utils/flow_meter.py` | PC에서 USB-RS485 어댑터로 FT-210 순시유량 읽기 (보드를 거치지 않는 구성) |
 
 라즈베리파이의 ChirpStack과 MQTT 브로커는 설정해 동작 중이다 ([ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md)). 데이터 수집, 저장, 웹서버 코드는 아직 없다.

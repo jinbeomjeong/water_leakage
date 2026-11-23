@@ -6,7 +6,7 @@
 
 static const unsigned long usb_baudrate = 115200;  // unit: bps
 static const unsigned long io_power_settle_time = 300;  // unit: ms
-static const unsigned long read_interval = 1000;  // unit: ms
+static const unsigned long read_interval = 500;  // unit: ms, the ft-210 updates its display every 250 ms
 static const unsigned long uplink_interval = 30000;  // unit: ms, short value for testing
 static const uint8_t uplink_payload_size = 2;  // unit: byte, one flow record
 
