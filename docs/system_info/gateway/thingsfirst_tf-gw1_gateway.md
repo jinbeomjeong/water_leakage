@@ -1,7 +1,7 @@
 # ThingsFirst LoRa 게이트웨이 TF-GW1 조사 정리
 
 작성일: 2026-11-05
-수정일: 2026-11-18 (ICS 주소 변경, 패킷 포워더로 ChirpStack 연결)
+수정일: 2026-11-23 (iptime 공유기 망으로 이동, 서버 주소 변경)
 
 ## 1. 라벨 정보 (사진에서 읽은 내용)
 
@@ -52,7 +52,8 @@
 |---|---|---|
 | Wi-Fi AP | `https://192.168.230.1` | AP가 켜져 있을 때 |
 | 이더넷, DHCP 서버 없음 | `https://169.254.54.51` | PC와 직접 연결. 주소는 MAC 마지막 2바이트(`36:33` → 54.51)에서 정해짐 |
-| 이더넷, DHCP | `https://192.168.137.63` | PC의 인터넷 연결 공유(ICS) 망에서 받은 주소 (2026-11-18). 고정 아님, 2026-11-17에는 `.177`이었다. 호스트 이름 `RAK7289V2.mshome.net` |
+| 이더넷, 공유기 DHCP | `https://192.168.0.4` | iptime 공유기 망에서 받은 주소 (2026-11-23). DHCP 예약은 아직 안 했다 |
+| 이더넷, ICS (이전) | `https://192.168.137.63` | PC의 인터넷 연결 공유(ICS) 망에서 받은 주소 (2026-11-18). 고정 아님, 2026-11-17에는 `.177`이었다. 호스트 이름 `RAK7289V2.mshome.net` |
 | USB-C 콘솔 | CH340, 57600-8-N-1 | 부팅 로그 확인, 로그인에는 `root` 비밀번호 필요 |
 
 - 웹 UI는 부팅 후 1분 정도 늦게 뜬다. 그 전에는 ping과 SSH(22)만 응답하고 80/443은 연결이 거부된다.
@@ -97,14 +98,15 @@
 | Work mode | Packet forwarder |
 | Frequency plan | Republic of Korea (ROK), KR920 |
 | Protocol | Semtech UDP GWMP Protocol |
-| Server address | `192.168.137.155` (라즈베리파이) |
+| Server address | `192.168.0.6` (라즈베리파이, 공유기 망, 2026-11-23). 2026-11-18에는 ICS 망의 `192.168.137.155` |
 | Server port up / down | 1700 / 1700 |
 | 나머지 (Push timeout, Keepalive, Statistic interval, MTU, Secondary LNS, Class B, GPS, Fine timestamp, Packet filter) | 기본값 / 끔 |
 | Gateway EUI | `ac1f09fffe263633` (이더넷 MAC 가운데에 `FFFE`) |
 
 - LoRa Gateway MQTT Bridge 대신 Semtech UDP를 골랐다. 라즈베리파이의 Gateway Bridge가 이미 UDP 1700에서 기다리고 있어 Pi 설정을 바꿀 필요가 없고, MQTT 브로커를 Pi 내부에만 둘 수 있다. 유저 장치가 같은 망에 들어와도 브로커에 접근하지 못한다.
 - ChirpStack에 게이트웨이를 등록한 뒤 Online이 되었고, 보드의 Join과 업링크를 이 게이트웨이로 받았다.
-- 서버 주소가 ICS 주소라 바뀔 수 있다. Wi-Fi 공유기로 옮기면 공유기에서 예약한 Pi 주소로 바꾼다.
+- 2026-11-23 게이트웨이와 Pi를 iptime 공유기로 옮기고 서버 주소를 `192.168.0.6`으로 바꿨다. ChirpStack에서 Last seen이 갱신되고 30초마다 `event/stats`가 들어오는 것을 확인했다.
+- 공유기에서 DHCP 예약을 하지 않아 Pi 주소가 바뀔 수 있다. 예약한 뒤 주소가 달라지면 서버 주소도 바꾼다.
 
 참고:
 
@@ -118,7 +120,7 @@
 - [x] 기종: RAK7289V2
 - [x] 웹 UI 접속 주소와 계정 (4절)
 - [x] 사용할 모드: 패킷 포워더 + Semtech UDP, 라즈베리파이 ChirpStack에 연결 (7절). 처음 정한 LoRa Gateway MQTT Bridge에서 바꿨다
-- [x] 서버 주소: 라즈베리파이 `192.168.137.155`, UDP 1700
+- [x] 서버 주소: 라즈베리파이 `192.168.0.6`(공유기 망, 2026-11-23), UDP 1700
 - [ ] 게이트웨이 IP 고정 (고정 IP 또는 공유기 DHCP 예약)
 - [ ] 노드 업링크 주기 (용량 계산용). 지금 펌웨어는 시험용 30초
 

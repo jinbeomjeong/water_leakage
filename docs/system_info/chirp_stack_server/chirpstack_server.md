@@ -13,7 +13,7 @@
 | 저장 장치 | SD 카드 115 GB (2026-11-18 기준 25 GB 사용) |
 | 호스트 이름 | `raspberrypi` (`raspberrypi.local`, ICS 망에서는 `raspberrypi.mshome.net`) |
 | eth0 MAC | `2C:CF:67:2A:50:62` (wlan0 `2C:CF:67:2A:50:63`, 사용 안 함) |
-| IP | `192.168.137.155`, PC의 인터넷 연결 공유(ICS) 망에서 받은 주소. 고정 아님 |
+| IP | `192.168.0.6`, iptime 공유기 망에서 받은 주소 (2026-11-23). DHCP 예약 안 함. 2026-11-18에는 ICS 망의 `192.168.137.155` |
 | 시간대 | `Asia/Seoul` (2026-11-18 `America/New_York`에서 변경), NTP 동기화 |
 | 계정 | `pi`. PC의 SSH 키(`~/.ssh/id_ed25519`)로 로그인, sudo는 비밀번호 필요 |
 | sudo 비밀번호 | `sudo_pwd.txt`(git 제외)에만 둔다 |
@@ -122,7 +122,7 @@
 | Payload codec | JavaScript, `src/server/payload_codec.js` | |
 
 - Application Key는 ChirpStack과 `src/board/header/lorawan_keys.h`(git 제외)에만 둔다. 게이트웨이 내장 네트워크 서버 시험 때와 같은 키를 쓴다.
-- 서버에 넣은 코덱은 주석 한 줄(펌웨어 경로)만 저장소 파일과 다르고 코드는 같다.
+- 2026-11-23 코덱을 저장소의 `src/server/payload_codec.js`(커밋 `0c5efd6`, 유량 레코드 형식)로 바꿨다. 전체를 그대로 붙여넣어 저장소 파일과 같다.
 
 ## 5. 연결 확인 (2026-11-18)
 
@@ -152,6 +152,25 @@
 - 서버는 매번 Join Accept를 만들었고, 게이트웨이는 매번 전송 ack를 보냈다. 보드는 18:54:40 응답에서야 Join했다.
 - 원인은 확인하지 못했다. 보드와 게이트웨이가 가까워 RSSI가 -37 dBm으로 강해서 보드 수신기가 포화되었을 가능성이 있다. 거리를 떼고 첫 시도에 Join되는지 확인한다.
 
+### 공유기 망, 새 펌웨어와 코덱 (2026-11-23)
+
+게이트웨이(`192.168.0.4`)와 Pi(`192.168.0.6`)를 iptime 공유기 망으로 옮긴 뒤 확인했다.
+
+| 항목 | 결과 |
+|---|---|
+| 게이트웨이 | 서버 주소를 `192.168.0.6`으로 바꾼 뒤 30초마다 `event/stats` 수신 |
+| 보드 펌웨어 | 커밋 `0c5efd6`을 20:44경 업로드. Join 후 30초마다 업링크 |
+| 코덱 | 같은 커밋의 `payload_codec.js`로 교체. 교체 전에는 `UPLINK_CODEC` 오류(`expected 7 bytes, got 2`) |
+
+업링크 예 (20:48:12 KST):
+
+| 항목 | 값 |
+|---|---|
+| fCnt / fPort | 7 / 1 |
+| data | `0100` |
+| object | `{"flow_status": "fault"}`, 펄스미터 미연결 |
+| RSSI / SNR | -39 dBm / 13.8 dB |
+
 ## 6. 운영 명령
 
 ```bash
@@ -164,7 +183,8 @@ mosquitto_sub -h 127.0.0.1 -t 'application/+/device/+/event/up' -v
 
 - [ ] ChirpStack `admin` 기본 비밀번호 변경
 - [ ] `pi` 계정 비밀번호 변경 (2026-11-18 작업 중 `/etc/timezone`에 몇 초간 노출된 적이 있음)
-- [ ] Wi-Fi 공유기로 옮긴 뒤 Pi와 게이트웨이 DHCP 예약, 게이트웨이의 서버 주소 변경
+- [x] Wi-Fi 공유기로 옮기고 게이트웨이의 서버 주소 변경 (2026-11-23)
+- [ ] 공유기에서 Pi와 게이트웨이 DHCP 예약
 - [ ] Join 지연 원인 확인 (보드와 게이트웨이 거리)
 - [ ] 데이터 수집 프로그램: MQTT `event/up` 구독 → DB 저장
 - [ ] 웹 서버 (유저 장치용 HTTP)
