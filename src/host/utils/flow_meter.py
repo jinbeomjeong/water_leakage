@@ -1,5 +1,6 @@
 """Read measurements from a Flownics FT-210 flow transmitter over Modbus RTU."""
 import math, struct
+from collections.abc import Sequence
 from typing import Final
 from pymodbus.client import ModbusSerialClient
 from pymodbus.exceptions import ModbusException
@@ -10,7 +11,7 @@ flow_rate_start_address: Final[int] = 0x0004  # protocol address of register 400
 flow_rate_register_count: Final[int] = 2  # high word, low word of a 32-bit float
 
 
-def convert_registers_to_float32(registers: list[int]) -> float:
+def convert_registers_to_float32(registers: Sequence[int]) -> float:
     """Convert two holding registers to an IEEE 754 single precision float in big-endian order.
 
     The manual calls the format "4321 swapped FP", but the device sends the bytes in plain big-endian order:

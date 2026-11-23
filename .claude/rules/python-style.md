@@ -101,13 +101,29 @@ safety_length: float = 0.5  # unit: meter
 
 ## 실행과 검증 도구
 
-코드 실행은 `E:\Workspace\python-dev\.pixi\envs\default\python.exe -s`로 한다.
+코드 실행과 ruff, pyright는 PC에 있는 `python-dev` 환경의 실행 파일을 쓴다. 아래 표에서 그 PC에 있는 경로를 고른다. 이 경로는 python-expert에 적힌 경로보다 우선한다.
 
-ruff와 pyright는 `E:\Workspace\python-dev`의 pixi 환경에 있는 실행 파일을 쓴다. python-expert에 적힌 경로보다 우선한다.
+| PC | 환경 위치 | Python | ruff | pyright |
+|---|---|---|---|---|
+| pixi | `E:\Workspace\python-dev\.pixi\envs\default` | `python.exe` | `Library\bin\ruff.exe` | `Scripts\pyright.exe` |
+| conda | `C:\Users\jinbeom\.conda\envs\python-dev` | `python.exe` | `Scripts\ruff.exe` | `Scripts\pyright.exe` |
+
+Python, ruff, pyright 경로는 환경 위치를 기준으로 한다. 예를 들어 conda PC의 Python은 `C:\Users\jinbeom\.conda\envs\python-dev\python.exe`다.
+
+pixi PC:
 
 ```powershell
+E:\Workspace\python-dev\.pixi\envs\default\python.exe -s <script>
 E:\Workspace\python-dev\.pixi\envs\default\Library\bin\ruff.exe check --ignore I001 <files>
 E:\Workspace\python-dev\.pixi\envs\default\Scripts\pyright.exe --pythonpath E:\Workspace\python-dev\.pixi\envs\default\python.exe <files>
+```
+
+conda PC:
+
+```powershell
+C:\Users\jinbeom\.conda\envs\python-dev\python.exe -s <script>
+C:\Users\jinbeom\.conda\envs\python-dev\Scripts\ruff.exe check --ignore I001 <files>
+C:\Users\jinbeom\.conda\envs\python-dev\Scripts\pyright.exe --pythonpath C:\Users\jinbeom\.conda\envs\python-dev\python.exe <files>
 ```
 
 - `I001`은 위 import 규칙과 충돌하므로 끈다.

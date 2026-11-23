@@ -35,7 +35,8 @@ def create_label(text: str, font_size: int, text_color: str) -> QLabel:
 
 def create_plot_widget(title: str, title_size: str, left_axis_title: str, bottom_axis_title: str, title_color: str,
                        axis_text_color: str, axis_line_color: str, grid_alpha: float, y_axis_width: int,
-                       graph_time_window: float, min_width: int, min_height: int) -> pg.PlotWidget:
+                       graph_time_window: float, min_width: int,
+                       min_height: int) -> tuple[pg.PlotWidget, pg.PlotItem]:
     """Create a display-only plot widget whose x axis starts at 0 and whose y axis fits the visible data.
 
     The global pyqtgraph settings such as useOpenGL are read when the widget is created, so the caller has to
@@ -56,19 +57,28 @@ def create_plot_widget(title: str, title_size: str, left_axis_title: str, bottom
         min_height: Minimum widget height. Unit: pixel.
 
     Returns:
-        The new plot widget.
+        The new plot widget and the plot item inside it.
+
+    Raises:
+        RuntimeError: If the plot widget has no plot item.
     """
     plot_widget = pg.PlotWidget()
     plot_widget.setMinimumSize(min_width, min_height)
 
-    plot_item: pg.PlotItem = plot_widget.getPlotItem()
+    plot_item: pg.PlotItem | None = plot_widget.getPlotItem()
+    if plot_item is None:
+        raise RuntimeError('plot widget has no plot item')
+
+    # the plot item forwards range and mouse calls to its view box at runtime, so they are called on the view box
+    view_box: pg.ViewBox = plot_item.getViewBox()
+
     plot_item.setTitle(title, color=title_color, size=title_size)
     plot_item.showGrid(x=True, y=True, alpha=grid_alpha)
 
     # the graph only displays data, so all mouse interaction and its buttons and menu are turned off
     plot_item.hideButtons()
     plot_item.setMenuEnabled(False)
-    plot_item.setMouseEnabled(x=False, y=False)
+    view_box.setMouseEnabled(x=False, y=False)
 
     axis_titles = {'left': left_axis_title, 'bottom': bottom_axis_title}
     for axis_name, axis_title in axis_titles.items():
@@ -81,7 +91,7 @@ def create_plot_widget(title: str, title_size: str, left_axis_title: str, bottom
     plot_item.getAxis('left').setWidth(y_axis_width)
 
     # fit the y axis to the samples inside the x window only
-    plot_item.getViewBox().setAutoVisible(y=True)
-    plot_item.setXRange(0, graph_time_window, padding=0)
+    view_box.setAutoVisible(y=True)
+    view_box.setXRange(0, graph_time_window, padding=0)
 
-    return plot_widget
+    return plot_widget, plot_item

@@ -122,14 +122,19 @@ class FlowMeterWindow(QWidget):
         self.__time_label = self.__create_status_label(widest_text=widest_time_text)
         self.__cpu_usage_label = self.__create_status_label(widest_text=widest_cpu_usage_text)
 
-        self.__plot_widget = create_plot_widget(title=window_title, title_size=graph_title_size,
-                                                left_axis_title='Flow rate (LPM)', bottom_axis_title='Elapsed time (s)',
-                                                title_color=primary_text_color, axis_text_color=secondary_text_color,
-                                                axis_line_color=axis_line_color, grid_alpha=grid_alpha,
-                                                y_axis_width=y_axis_width, graph_time_window=graph_time_window,
-                                                min_width=plot_min_width, min_height=plot_min_height)
+        self.__plot_widget, plot_item = create_plot_widget(title=window_title, title_size=graph_title_size,
+                                                           left_axis_title='Flow rate (LPM)',
+                                                           bottom_axis_title='Elapsed time (s)',
+                                                           title_color=primary_text_color,
+                                                           axis_text_color=secondary_text_color,
+                                                           axis_line_color=axis_line_color, grid_alpha=grid_alpha,
+                                                           y_axis_width=y_axis_width,
+                                                           graph_time_window=graph_time_window,
+                                                           min_width=plot_min_width, min_height=plot_min_height)
+        # the plot item forwards range calls to its view box at runtime, so they are called on the view box
+        self.__plot_view_box: pg.ViewBox = plot_item.getViewBox()
         flow_rate_pen = pg.mkPen(color=flow_rate_line_color, width=flow_rate_line_width)
-        self.__flow_rate_curve = self.__plot_widget.getPlotItem().plot(pen=flow_rate_pen)
+        self.__flow_rate_curve = plot_item.plot(pen=flow_rate_pen)
         self.__set_default_y_axis_range()
         self.__is_y_axis_default_range: bool = True
         self.__arrange_window()
@@ -239,11 +244,11 @@ class FlowMeterWindow(QWidget):
 
         window_start_time: float = calculate_graph_window_start_time(latest_elapsed_time=elapsed_time_arr[-1],
                                                                      graph_time_window=graph_time_window)
-        self.__plot_widget.getPlotItem().setXRange(window_start_time, window_start_time + graph_time_window, padding=0)
+        self.__plot_view_box.setXRange(window_start_time, window_start_time + graph_time_window, padding=0)
         self.__update_y_axis_range(elapsed_time_arr=elapsed_time_arr, window_start_time=window_start_time)
 
     def __set_default_y_axis_range(self) -> None:
-        self.__plot_widget.getPlotItem().setYRange(default_y_axis_min, default_y_axis_max, padding=0)
+        self.__plot_view_box.setYRange(default_y_axis_min, default_y_axis_max, padding=0)
 
     def __update_y_axis_range(self, elapsed_time_arr: np.ndarray, window_start_time: float) -> None:
         flow_rate_arr = self.__flow_rate_arr[:self.__sample_count]
@@ -264,7 +269,7 @@ class FlowMeterWindow(QWidget):
 
         # setting a y range turned the auto range off, the auto visible setting of the view box is still in effect
         else:
-            self.__plot_widget.getPlotItem().getViewBox().enableAutoRange(y=True)
+            self.__plot_view_box.enableAutoRange(y=True)
 
     def __update_status_labels(self) -> None:
         self.__time_label.setText(self.__read_current_time_text())
