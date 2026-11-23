@@ -1,0 +1,187 @@
+/* layout for phone screens first, the page also works on a desktop browser */
+:root {
+  --text-color: #1d2733;
+  --muted-color: #66707a;
+  --card-color: #ffffff;
+  --page-color: #eef2f5;
+  --normal-color: #1f8a4c;
+  --fault-color: #c62828;
+  --stale-color: #b26a00;
+  --line-color: #1565c0;
+  --grid-color: #d5dbe0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--page-color);
+  color: var(--text-color);
+  font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  font-size: 18px;
+}
+
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 4px 0 16px;
+}
+
+h2 {
+  font-size: 1.15rem;
+  margin: 0 0 8px;
+}
+
+.card {
+  background: var(--card-color);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.flow-value {
+  font-size: 4rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-value .unit {
+  font-size: 1.5rem;
+  font-weight: 400;
+  color: var(--muted-color);
+}
+
+/* an old value stays visible but greyed out so it is not mistaken for a live one */
+.is-stale .flow-value {
+  color: var(--muted-color);
+}
+
+.badges {
+  margin: 8px 0 12px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  background: var(--grid-color);
+  margin-right: 6px;
+}
+
+.badge[hidden] {
+  display: none;
+}
+
+.badge-normal {
+  background: var(--normal-color);
+  color: #ffffff;
+}
+
+.badge-fault {
+  background: var(--fault-color);
+  color: #ffffff;
+}
+
+.badge-stale {
+  background: var(--stale-color);
+  color: #ffffff;
+}
+
+.details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.details dt {
+  color: var(--muted-color);
+}
+
+.details dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+#flow-graph {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+#flow-graph .grid-line {
+  stroke: var(--grid-color);
+  stroke-width: 1;
+}
+
+#flow-graph .axis-label {
+  fill: var(--muted-color);
+  font-size: 11px;
+}
+
+#flow-graph .flow-line {
+  fill: none;
+  stroke: var(--line-color);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+#flow-graph .flow-point {
+  fill: var(--line-color);
+}
+
+#flow-graph .fault-mark {
+  fill: var(--fault-color);
+}
+
+#flow-graph .empty-label {
+  fill: var(--muted-color);
+  font-size: 14px;
+}
+
+.legend {
+  margin: 8px 0 0;
+  font-size: 0.9rem;
+  color: var(--muted-color);
+}
+
+.legend-line,
+.legend-fault {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 8px;
+}
+
+.legend-line {
+  width: 20px;
+  height: 3px;
+  background: var(--line-color);
+}
+
+.legend-fault {
+  width: 4px;
+  height: 12px;
+  background: var(--fault-color);
+}
+
+.message {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #fff3e0;
+  color: var(--stale-color);
+}
+
+.message[hidden] {
+  display: none;
+}

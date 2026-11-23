@@ -199,7 +199,8 @@ mosquitto_sub -h 127.0.0.1 -t 'application/+/device/+/event/up' -v
 - [x] Wi-Fi 공유기로 옮기고 게이트웨이의 서버 주소 변경 (2026-11-23)
 - [ ] 공유기에서 Pi와 게이트웨이 DHCP 예약
 - [ ] Join 지연 원인 확인 (보드와 게이트웨이 거리)
-- [ ] 데이터 수집 프로그램: MQTT `event/up` 구독 → DB 저장
-- [ ] 웹 서버 (유저 장치용 HTTP)
+- [x] 데이터 수집 프로그램: MQTT `event/up` 구독 → SQLite 저장 (2026-11-23, `src/server/web_server.py`)
+- [x] 웹 서버 (유저 장치용 HTTP, Flask 포트 5000, 2026-11-23)
+- [ ] 웹 서버를 부팅 시 자동 시작할지 결정 (지금은 수동 실행)
 - [ ] 장치 프로필 Measurements에 `flow_lpm` 등록
 - [ ] ChirpStack 정식 릴리스로 교체 여부

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>누수 감지 - 유량</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body data-api-url="{{ url_for('get_flow') }}" data-poll-interval-ms="{{ poll_interval_ms }}"
+      data-graph-max-flow="{{ graph_max_flow }}">
+  <main>
+    <h1>유량 모니터</h1>
+
+    <section class="card" id="current-card">
+      <div class="flow-value"><span id="flow-value">--</span> <span class="unit">LPM</span></div>
+      <div class="badges">
+        <span id="flow-status" class="badge">불러오는 중</span>
+        <span id="stale-badge" class="badge badge-stale" hidden>수신 끊김</span>
+      </div>
+      <dl class="details">
+        <dt>마지막 수신</dt><dd id="received-time">--</dd>
+        <dt>경과</dt><dd id="received-age">--</dd>
+        <dt>장치</dt><dd id="device-name">--</dd>
+        <dt>신호</dt><dd id="signal">--</dd>
+      </dl>
+    </section>
+
+    <section class="card">
+      <h2>최근 {{ graph_window_min }}분</h2>
+      <svg id="flow-graph" viewBox="0 0 360 200" role="img" aria-label="최근 {{ graph_window_min }}분 유량 그래프"></svg>
+      <p class="legend"><span class="legend-line"></span> 유량 (LPM) <span class="legend-fault"></span> 고장</p>
+    </section>
+
+    <p id="connection-message" class="message" hidden>서버에 연결할 수 없습니다. 마지막으로 받은 값을 표시합니다.</p>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

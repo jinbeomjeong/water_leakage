@@ -21,8 +21,8 @@
                                                                 ^                                  Role: LoRaWAN Network Server (ChirpStack)
                                                                 |                                        Gateway Bridge (UDP → MQTT)
                                                        Ethernet (UDP 1700)                               MQTT Broker (Pi internal only)
-                                                                |                                        Data Collection (planned, via MQTT)
-                                                                v                                        Web-Server (planned)
+                                                                |                                        Data Collection (MQTT → SQLite)
+                                                                v                                        Web-Server (Flask, port 5000)
                                                            LoRa Gateway
                                                            TF-GW1 (RAK7289V2)
                                                                 ^
@@ -43,7 +43,7 @@ FT-210 (KOT-EX)                                            RAK4631 + RAK5802 + R
 | PC | - | Local Monitoring | 보드와 USB로 통신 | - |
 | LoRa Gateway | TF-GW1 (RAK7289V2) | - | 보드와 LoRaWAN으로 통신, Wi-Fi Router와 Ethernet으로 연결 | [TF-GW1 조사 정리](gateway/thingsfirst_tf-gw1_gateway.md) |
 | Wi-Fi Router | - | - | 게이트웨이, 라즈베리파이, User Device를 연결 | - |
-| Raspberry Pi 5 | - | LoRaWAN Network Server (ChirpStack), Gateway Bridge (UDP → MQTT), MQTT Broker (Pi internal only), Data Collection (planned, via MQTT), Web-Server (planned) | 네트워크 서버와 MQTT 브로커 운영 중, 데이터 수집과 웹 제공은 예정 | [ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md) |
+| Raspberry Pi 5 | - | LoRaWAN Network Server (ChirpStack), Gateway Bridge (UDP → MQTT), MQTT Broker (Pi internal only), Data Collection (MQTT → SQLite), Web-Server (Flask, port 5000) | 네트워크 서버와 MQTT 브로커 운영 중. 2026-11-23 웹 서버가 업링크를 SQLite에 저장하고 유량 화면을 제공 (수동 실행) | [ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md) |
 | User Device | - | - | Wi-Fi Router를 거쳐 HTTP로 접속 | - |
 
 LoRa Client Board의 모듈 역할은 다음과 같다.
@@ -63,7 +63,7 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 | LoRa Client Board ↔ LoRa Gateway | LoRaWAN (KR920) | 양방향 | Class A, OTAA, LoRaWAN 1.0.2 / RP 1.0.2 rev B, 업링크 FPort 1, 유량 레코드 2바이트 페이로드 | 2026-11-18 라즈베리파이 ChirpStack으로 Join과 30초 주기 업링크, 디코딩 확인. 2026-11-23 유량 레코드 형식 펌웨어와 코덱을 적용해 디코딩 확인 |
 | LoRa Gateway ↔ Wi-Fi Router | Ethernet (UDP 1700) | 양방향 | Work Mode: Packet forwarder, Protocol: Semtech UDP GWMP, 서버 라즈베리파이 `192.168.0.6` UDP 1700. 게이트웨이 주소 `192.168.0.4` | 2026-11-23 iptime 공유기 망에서 확인, DHCP 예약 안 함 |
 | Raspberry Pi 5 ↔ Wi-Fi Router | Ethernet (UDP, HTTP) | 양방향 | 주소 `192.168.0.6`. 게이트웨이 UDP 1700 수신, ChirpStack 웹 UI 8080. MQTT 브로커는 Pi 내부(127.0.0.1)에서만 | 2026-11-23 iptime 공유기 망에서 확인, DHCP 예약 안 함 |
-| User Device ↔ Wi-Fi Router | Wi-Fi (HTTP) | 양방향 | - | 통신 미확인 |
+| User Device ↔ Wi-Fi Router | Wi-Fi (HTTP) | 양방향 | `http://192.168.0.6:5000` (Pi 웹 서버) | 2026-11-23 같은 공유기 망의 PC에서 접속 확인, 핸드폰은 미확인 |
 
 세부 내용은 그림에 없고 관련 문서와 시험에서 가져왔다. 상태는 각 칸에 날짜가 없으면 정리한 날짜 기준이다.
 
@@ -102,7 +102,7 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 - Pi 내부의 MQTT 흐름: Gateway Bridge가 게이트웨이의 UDP 패킷을 `kr920/gateway/...` 토픽으로 바꿔 ChirpStack에 넘기고, ChirpStack은 디코딩한 업링크를 `application/.../event/up` 토픽으로 내보낸다. ChirpStack v4는 게이트웨이와 MQTT로만 연결하므로 게이트웨이 프로토콜과 관계없이 브로커가 필요하다.
 - 라즈베리파이의 나머지 구성 요소: Redis, SQLite DB, ChirpStack REST API ([ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md)).
 - 지금 망: 2026-11-23 게이트웨이(`192.168.0.4`)와 라즈베리파이(`192.168.0.6`)를 iptime 공유기(`192.168.0.1`)에 유선으로 연결했다. 2026-11-18까지는 PC의 인터넷 연결 공유(ICS) 망에서 시험했다.
-- 데이터 저장: 라즈베리파이의 저장 방식은 아직 정하지 않았다.
+- 데이터 저장: 웹 서버가 업링크마다 Pi의 SQLite 파일(`~/water_leakage_data/flow.sqlite`)에 한 줄씩 저장한다.
 
 ## 관련 코드
 
@@ -113,7 +113,8 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 | `src/board/header/lorawan_link.h`, `src/board/src/lorawan_link.cpp` | KR920 OTAA Join과 업링크 (SX126x-Arduino) |
 | `src/board/header/lorawan_keys.example.h` | OTAA 키 파일 양식, 실제 키는 `lorawan_keys.h`(git 제외)에 둔다 |
 | `src/server/payload_codec.js` | ChirpStack 장치 프로필의 업링크 디코더 |
+| `src/server/web_server.py`, `mqtt_listener.py`, `flow_store.py`, `templates/`, `static/` | Pi 웹 서버: MQTT `event/up` 구독 → SQLite 저장 → 현재 유량과 최근 1시간 그래프 화면, `GET /api/flow`. 패키지는 `src/server/requirements.txt` |
 | `src/host/main_gui.py`, `src/host/utils/board_link.py` | 보드 USB(COM6)의 `flow=` 줄을 읽어 유량 그래프 표시 (y축 기본 0~2 LPM). 실행은 `src/host/run_main_gui.bat` |
 | `src/host/main.py`, `src/host/utils/flow_meter.py` | PC에서 USB-RS485 어댑터로 FT-210 순시유량 읽기 (보드를 거치지 않는 구성) |
 
-라즈베리파이의 ChirpStack과 MQTT 브로커는 설정해 동작 중이다 ([ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md)). 데이터 수집, 저장, 웹서버 코드는 아직 없다.
+라즈베리파이의 ChirpStack과 MQTT 브로커는 설정해 동작 중이다 ([ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md)). 데이터 수집, 저장, 웹 화면은 `src/server/web_server.py`가 한 프로세스로 맡는다. Pi에서 `~/water_leakage`를 기준으로 `/home/pi/miniconda3/envs/python-dev/bin/python -s src/server/web_server.py`로 직접 실행한다 (부팅 시 자동 시작하지 않음).
