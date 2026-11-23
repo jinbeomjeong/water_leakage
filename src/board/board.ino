@@ -1,6 +1,6 @@
-// read the pulse meter over rs485 with the rak5802, print each value to the pc over usb and send it over lorawan
+// read the ft-210 flow transmitter over rs485 with the rak5802, print each value to the pc over usb and send it over lorawan
 #include <Adafruit_TinyUSB.h>
-#include "header/pulse_meter.h"
+#include "header/flow_meter.h"
 #include "header/lorawan_link.h"
 
 
@@ -15,70 +15,74 @@ static const uint8_t sensor_type_flow = 0x0;
 static const uint8_t sensor_type_current = 0x1;  // reserved, the board has no current input yet
 static const uint8_t sensor_status_normal = 0x0;
 static const uint8_t sensor_status_fault = 0x1;
-static const int64_t max_flow_raw = 200;  // unit: 0.1 lpm, values above 20.0 lpm are clamped
+static const float flow_raw_per_lpm = 100.0f;  // flow raw unit is 0.01 lpm
+static const uint8_t max_flow_raw = 200;  // unit: 0.01 lpm, values above 2.00 lpm are clamped
+static const uint8_t flow_rate_print_digits = 3;
 
 static unsigned long last_read_time = 0;  // unit: ms
 static unsigned long last_uplink_time = 0;  // unit: ms
 
-static PulseMeterStatus last_status = PulseMeterStatus::timeout;
-static PulseMeterReading last_reading = {};
+static FlowMeterStatus last_status = FlowMeterStatus::timeout;
+static FlowMeterReading last_reading = {};
 
 
-static void print_reading(PulseMeterStatus status, const PulseMeterReading &reading)
+static void print_register_data(const FlowMeterReading &reading)
 {
-    if (status == PulseMeterStatus::ok)
-    {
-        Serial.print("pv=");
-        Serial.println(reading.pv, reading.decimal_places);
-    }
-    else
-    {
-        Serial.print("error=");
-        Serial.print(get_pulse_meter_status_text(status));
+    Serial.print(" data=");
 
-        if (status == PulseMeterStatus::exception_response)
+    for (uint8_t i = 0; i < sizeof(reading.register_data); i++)
+    {
+        if (reading.register_data[i] < 0x10)
         {
-            Serial.print(" code=");
-            Serial.print(reading.exception_code);
+            Serial.print('0');
         }
-
-        Serial.println();
+        Serial.print(reading.register_data[i], HEX);
     }
 }
 
 
-// convert the pv to 0.1 lpm units with rounding and clamp it to 0..200
-// the pv unit must be set to lpm on the pulse meter
-static uint8_t get_flow_raw(const PulseMeterReading &reading)
+static void print_reading(FlowMeterStatus status, const FlowMeterReading &reading)
 {
-    int64_t flow_raw = reading.raw_pv;
-
-    if (reading.decimal_places == 0)
+    if (status == FlowMeterStatus::ok)
     {
-        flow_raw *= 10;
-    }
-    else
-    {
-        int64_t divisor = 1;
-        for (uint8_t i = 1; i < reading.decimal_places; i++)
-        {
-            divisor *= 10;
-        }
-
-        // round half up only for non-negative values, negative values are clamped to 0 below
-        if (flow_raw > 0)
-        {
-            flow_raw = (flow_raw + divisor/2)/divisor;
-        }
+        Serial.print("flow=");
+        Serial.print(reading.flow_rate, flow_rate_print_digits);
+        print_register_data(reading);
+        Serial.println();
+        return;
     }
 
-    if (flow_raw < 0)
+    Serial.print("error=");
+    Serial.print(get_flow_meter_status_text(status));
+
+    if (status == FlowMeterStatus::exception_response)
+    {
+        Serial.print(" code=");
+        Serial.print(reading.exception_code);
+    }
+    else if (status == FlowMeterStatus::invalid_response)
+    {
+        // all zero unless the frame was well formed and only the value was not a number
+        print_register_data(reading);
+    }
+
+    Serial.println();
+}
+
+
+// convert the flow rate to 0.01 lpm units with rounding and clamp it to 0..200
+// the device must be set to total_unit liter and time base minute
+static uint8_t get_flow_raw(const FlowMeterReading &reading)
+{
+    const float flow_raw = roundf(reading.flow_rate*flow_raw_per_lpm);
+
+    if (flow_raw <= 0.0f)
     {
         return 0;
     }
-    if (flow_raw > max_flow_raw)
+    if (flow_raw >= max_flow_raw)
     {
-        return static_cast<uint8_t>(max_flow_raw);
+        return max_flow_raw;
     }
     return static_cast<uint8_t>(flow_raw);
 }
@@ -86,10 +90,10 @@ static uint8_t get_flow_raw(const PulseMeterReading &reading)
 
 // flow record layout:
 // byte 0: sensor type 0x0 in the upper 4 bits, status in the lower 4 bits (0x0 normal, 0x1 fault)
-// byte 1: raw flow in 0.1 lpm (0..200), 0 when the status is fault
-static void build_uplink_payload(PulseMeterStatus status, const PulseMeterReading &reading, uint8_t *payload)
+// byte 1: raw flow in 0.01 lpm (0..200), 0 when the status is fault
+static void build_uplink_payload(FlowMeterStatus status, const FlowMeterReading &reading, uint8_t *payload)
 {
-    const bool is_normal = status == PulseMeterStatus::ok;
+    const bool is_normal = status == FlowMeterStatus::ok;
     const uint8_t sensor_status = is_normal ? sensor_status_normal : sensor_status_fault;
 
     payload[0] = (sensor_type_flow << 4) | sensor_status;
@@ -118,7 +122,7 @@ void setup()
     digitalWrite(WB_IO2, HIGH);
     delay(io_power_settle_time);
 
-    begin_pulse_meter();
+    begin_flow_meter();
     begin_lorawan();
 }
 
@@ -130,7 +134,7 @@ void loop()
     if (millis() - last_read_time >= read_interval)
     {
         last_read_time = millis();
-        last_status = read_pulse_meter_pv(last_reading);
+        last_status = read_flow_meter_rate(last_reading);
         print_reading(last_status, last_reading);
     }
 

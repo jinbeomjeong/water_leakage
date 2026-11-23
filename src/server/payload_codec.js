@@ -4,7 +4,7 @@
 // Uplink on FPort 1 is a sequence of records, multi-byte values are big endian
 // (see build_uplink_payload in src/board/board.ino).
 // Each record starts with one byte: sensor type in the upper 4 bits, status in the lower 4 bits.
-//   type 0x0 flow:    1 data byte,  raw 0..200,  flow_lpm = raw * 0.1
+//   type 0x0 flow:    1 data byte,  raw 0..200,  flow_lpm = raw * 0.01
 //   type 0x1 current: 2 data bytes, raw 0..600,  current_ma = raw * 0.1 - 30
 //   status 0x0 normal, 0x1 fault (data bytes are 0 and ignored)
 
@@ -12,8 +12,8 @@ var UPLINK_FPORT = 1;
 var STATUS_NAMES = ["normal", "fault"];
 
 var SENSORS = {
-  0: { name: "flow", dataSize: 1, valueKey: "flow_lpm", toValue: function (raw) { return raw * 0.1; } },
-  1: { name: "current", dataSize: 2, valueKey: "current_ma", toValue: function (raw) { return raw * 0.1 - 30; } }
+  0: { name: "flow", dataSize: 1, valueKey: "flow_lpm", decimals: 2, toValue: function (raw) { return raw * 0.01; } },
+  1: { name: "current", dataSize: 2, valueKey: "current_ma", decimals: 1, toValue: function (raw) { return raw * 0.1 - 30; } }
 };
 
 function readUintBigEndian(bytes, offset, size) {
@@ -24,9 +24,10 @@ function readUintBigEndian(bytes, offset, size) {
   return value;
 }
 
-function roundToTenth(value) {
-  // keep one decimal place so 0.1 steps do not show floating point noise
-  return Math.round(value * 10) / 10;
+function roundToDecimals(value, decimals) {
+  // keep only the resolution of the sensor so steps like 0.01 do not show floating point noise
+  var scale = Math.pow(10, decimals);
+  return Math.round(value * scale) / scale;
 }
 
 function decodeUplink(input) {
@@ -64,7 +65,7 @@ function decodeUplink(input) {
     if (status === "normal") {
       var raw = readUintBigEndian(bytes, offset + 1, sensor.dataSize);
       data[sensor.name + "_raw"] = raw;
-      data[sensor.valueKey] = roundToTenth(sensor.toValue(raw));
+      data[sensor.valueKey] = roundToDecimals(sensor.toValue(raw), sensor.decimals);
     }
 
     offset += 1 + sensor.dataSize;

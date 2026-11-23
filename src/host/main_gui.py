@@ -1,4 +1,4 @@
-"""Show the present value (PV) of the pulse meter in a live OpenGL graph with the current time and CPU usage."""
+"""Show the flow rate of the FT-210 flow meter in a live OpenGL graph with the current time and CPU usage."""
 import sys
 import time
 from typing import Final
@@ -12,22 +12,24 @@ import pyqtgraph as pg
 from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient
 from pymodbus.exceptions import ModbusException
-from main import (pulse_meter_baudrate, pulse_meter_bytesize, pulse_meter_parity, pulse_meter_port,
-                  pulse_meter_stopbits, pulse_meter_timeout, pulse_meter_unit_address)
+from main import (flow_meter_baudrate, flow_meter_bytesize, flow_meter_parity, flow_meter_port, flow_meter_stopbits,
+                  flow_meter_timeout, flow_meter_unit_address, flow_rate_decimal_places)
+from utils.flow_meter import read_flow_meter_rate
 from utils.gui_widgets import create_label, create_plot_widget
-from utils.measurement import (append_sample, calculate_graph_window_start_time, check_visible_pv_in_range,
-                               connect_pulse_meter)
-from utils.pulse_meter import read_pulse_meter_pv
+from utils.measurement import (append_sample, calculate_graph_window_start_time, check_visible_flow_rate_in_range,
+                               connect_flow_meter)
 
 
 # graph data settings
 graph_time_window: Final[int] = 60  # unit: second
-max_sample_rate: Final[int] = 50  # unit: sample/second, above the measured 22 to 23 so the buffer spans the window
+# one request and response take about 25 ms at 9600 bps 8N1, so the device can not reach this rate and the buffer
+# spans the window, the actual rate with the FT-210 is not measured yet
+max_sample_rate: Final[int] = 50  # unit: sample/second
 sample_buffer_capacity: Final[int] = graph_time_window * max_sample_rate
 
 # y axis range while all visible samples are inside it, the y axis fits the visible samples otherwise
-default_y_axis_min: Final[float] = 0.0  # in the unit configured on the device
-default_y_axis_max: Final[float] = 5.0  # in the unit configured on the device
+default_y_axis_min: Final[float] = 0.0  # unit: LPM
+default_y_axis_max: Final[float] = 5.0  # unit: LPM
 
 # refresh settings
 graph_redraw_interval: Final[int] = 33  # unit: millisecond, about 30 Hz
@@ -37,41 +39,41 @@ status_update_interval: Final[int] = 1000  # unit: millisecond
 surface_color: Final[str] = '#fcfcfb'
 primary_text_color: Final[str] = '#0b0b0b'
 secondary_text_color: Final[str] = '#52514e'
-pv_line_color: Final[str] = '#2a78d6'
+flow_rate_line_color: Final[str] = '#2a78d6'
 axis_line_color: Final[str] = '#c8c7c3'
 
 # graph style settings
-pv_line_width: Final[int] = 2  # unit: pixel
+flow_rate_line_width: Final[int] = 2  # unit: pixel
 grid_alpha: Final[float] = 0.5  # 0 is invisible, 1 is opaque
 y_axis_width: Final[int] = 64  # unit: pixel, fixed so that the plot does not shift when the tick labels change
 
 # font settings
-pv_font_size: Final[int] = 28  # unit: point
-pv_error_font_size: Final[int] = 11  # unit: point, a long exception message has to fit in the pv label
+flow_rate_font_size: Final[int] = 28  # unit: point
+flow_rate_error_font_size: Final[int] = 11  # unit: point, a long exception message has to fit in the flow rate label
 status_font_size: Final[int] = 12  # unit: point
 graph_title_size: Final[str] = '12pt'
 
 # window settings
-window_title: Final[str] = 'Pulse meter PV'
+window_title: Final[str] = 'FT-210 flow rate'
 window_width: Final[int] = 1000  # unit: pixel
 window_height: Final[int] = 600  # unit: pixel
 plot_min_width: Final[int] = 320  # unit: pixel
 plot_min_height: Final[int] = 200  # unit: pixel
 
 # widest text of each label, used to keep the label width constant when its value changes
-# the documented pv range is -19999 to 99999 and the device reports up to 4 decimal places
-widest_pv_text: Final[str] = 'PV -19999.9999'
+# unverified assumption: the flow rate range of the device is not checked, a sign and 5 integer digits are assumed
+widest_flow_rate_text: Final[str] = 'Flow rate -99999.99 LPM'
 widest_time_text: Final[str] = '0000-00-00 00:00:00'
 widest_cpu_usage_text: Final[str] = 'CPU 100.0%'
 
 
-class PulseMeterReader(QThread):
-    """Read the pulse meter PV over one connection, as fast as the device answers, on a worker thread.
+class FlowMeterReader(QThread):
+    """Read the flow rate of the flow meter over one connection, as fast as the device answers, on a worker thread.
 
     The thread only reads from the device. It ends at the first communication failure, there is no retry.
 
     Attributes:
-        sample_read: Emitted per sample with the time since connecting (unit: second) and the PV.
+        sample_read: Emitted per sample with the time since connecting (unit: second) and the flow rate (unit: LPM).
         read_failed: Emitted once with the exception message when connecting or reading fails.
     """
 
@@ -80,24 +82,24 @@ class PulseMeterReader(QThread):
 
     def run(self) -> None:
         """Open the port, read until an interruption is requested or a failure occurs, then close the port."""
-        client = ModbusSerialClient(port=pulse_meter_port, framer=FramerType.RTU, baudrate=pulse_meter_baudrate,
-                                    parity=pulse_meter_parity, stopbits=pulse_meter_stopbits,
-                                    bytesize=pulse_meter_bytesize, timeout=pulse_meter_timeout)
+        client = ModbusSerialClient(port=flow_meter_port, framer=FramerType.RTU, baudrate=flow_meter_baudrate,
+                                    parity=flow_meter_parity, stopbits=flow_meter_stopbits,
+                                    bytesize=flow_meter_bytesize, timeout=flow_meter_timeout)
 
         # always release the port, connecting is inside the try block so that its failure is reported as well
         try:
-            connect_pulse_meter(client, port=pulse_meter_port, baudrate=pulse_meter_baudrate,
-                                parity=pulse_meter_parity, stopbits=pulse_meter_stopbits,
-                                bytesize=pulse_meter_bytesize)
+            connect_flow_meter(client, port=flow_meter_port, baudrate=flow_meter_baudrate, parity=flow_meter_parity,
+                               stopbits=flow_meter_stopbits, bytesize=flow_meter_bytesize)
 
             connected_time: Final[float] = time.monotonic()
 
             # each request is sent as soon as the previous response arrives to keep the maximum rate
             while not self.isInterruptionRequested():
-                pulse_meter_pv: float = read_pulse_meter_pv(client, unit_address=pulse_meter_unit_address)
-                self.sample_read.emit(time.monotonic() - connected_time, pulse_meter_pv)
+                flow_rate: float = read_flow_meter_rate(client, unit_address=flow_meter_unit_address)
+                self.sample_read.emit(time.monotonic() - connected_time, flow_rate)
 
-        # OSError covers serial port errors, ValueError covers a response with an unexpected register count
+        # ModbusException also covers a NaN or infinite flow rate, OSError covers serial port errors,
+        # ValueError covers a response with an unexpected register count
         except (ModbusException, OSError, ValueError) as error:
             self.read_failed.emit(str(error))
 
@@ -105,29 +107,29 @@ class PulseMeterReader(QThread):
             client.close()
 
 
-class PulseMeterWindow(QWidget):
-    """Window with the PV, the current time, the CPU usage and a live graph of the PV."""
+class FlowMeterWindow(QWidget):
+    """Window with the flow rate, the current time, the CPU usage and a live graph of the flow rate."""
 
     def __init__(self) -> None:
         super().__init__()
 
         # latest samples, the oldest sample is at index 0
         self.__elapsed_time_arr = np.zeros(shape=sample_buffer_capacity, dtype=np.float64)  # unit: second
-        self.__pv_arr = np.zeros(shape=sample_buffer_capacity, dtype=np.float64)
+        self.__flow_rate_arr = np.zeros(shape=sample_buffer_capacity, dtype=np.float64)  # unit: LPM
         self.__sample_count: int = 0
 
-        self.__pv_label = self.__create_pv_label()
+        self.__flow_rate_label = self.__create_flow_rate_label()
         self.__time_label = self.__create_status_label(widest_text=widest_time_text)
         self.__cpu_usage_label = self.__create_status_label(widest_text=widest_cpu_usage_text)
 
-        # the physical unit of the pv is not known, so the axis title has no unit
         self.__plot_widget = create_plot_widget(title=window_title, title_size=graph_title_size,
-                                                left_axis_title='PV', bottom_axis_title='Elapsed time (s)',
+                                                left_axis_title='Flow rate (LPM)', bottom_axis_title='Elapsed time (s)',
                                                 title_color=primary_text_color, axis_text_color=secondary_text_color,
                                                 axis_line_color=axis_line_color, grid_alpha=grid_alpha,
                                                 y_axis_width=y_axis_width, graph_time_window=graph_time_window,
                                                 min_width=plot_min_width, min_height=plot_min_height)
-        self.__pv_curve = self.__plot_widget.getPlotItem().plot(pen=pg.mkPen(color=pv_line_color, width=pv_line_width))
+        flow_rate_pen = pg.mkPen(color=flow_rate_line_color, width=flow_rate_line_width)
+        self.__flow_rate_curve = self.__plot_widget.getPlotItem().plot(pen=flow_rate_pen)
         self.__set_default_y_axis_range()
         self.__is_y_axis_default_range: bool = True
         self.__arrange_window()
@@ -151,7 +153,7 @@ class PulseMeterWindow(QWidget):
         self.__status_update_timer.timeout.connect(self.__update_status_labels)
         self.__status_update_timer.start()
 
-        self.__reader = PulseMeterReader(self)
+        self.__reader = FlowMeterReader(self)
         self.__reader.sample_read.connect(self.__store_sample)
         self.__reader.read_failed.connect(self.__show_read_failure)
         self.__reader.start()
@@ -171,18 +173,19 @@ class PulseMeterWindow(QWidget):
 
         event.accept()
 
-    def __create_pv_label(self) -> QLabel:
-        pv_label = create_label(text='PV --', font_size=pv_font_size, text_color=primary_text_color)
+    def __create_flow_rate_label(self) -> QLabel:
+        flow_rate_label = create_label(text='Flow rate -- LPM', font_size=flow_rate_font_size,
+                                       text_color=primary_text_color)
 
-        font: QFont = pv_label.font()
+        font: QFont = flow_rate_label.font()
         font.setBold(True)
-        pv_label.setFont(font)
+        flow_rate_label.setFont(font)
 
-        # the window can not get narrower than this, so the widest pv is never cut off
-        pv_label.setMinimumWidth(pv_label.fontMetrics().horizontalAdvance(widest_pv_text))
-        pv_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        # the window can not get narrower than this, so the widest flow rate is never cut off
+        flow_rate_label.setMinimumWidth(flow_rate_label.fontMetrics().horizontalAdvance(widest_flow_rate_text))
+        flow_rate_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
-        return pv_label
+        return flow_rate_label
 
     def __create_status_label(self, widest_text: str) -> QLabel:
         status_label = create_label(text='', font_size=status_font_size, text_color=secondary_text_color)
@@ -201,7 +204,7 @@ class PulseMeterWindow(QWidget):
         self.setAutoFillBackground(True)
 
         top_row_layout = QHBoxLayout()
-        top_row_layout.addWidget(self.__pv_label, stretch=1)
+        top_row_layout.addWidget(self.__flow_rate_label, stretch=1)
         top_row_layout.addWidget(self.__time_label)
         top_row_layout.addWidget(self.__cpu_usage_label)
 
@@ -212,27 +215,27 @@ class PulseMeterWindow(QWidget):
     def __read_current_time_text(self) -> str:
         return time.strftime('%Y-%m-%d %H:%M:%S')
 
-    def __store_sample(self, elapsed_time: float, pulse_meter_pv: float) -> None:
-        self.__pv_label.setText(f'PV {pulse_meter_pv}')
-        self.__sample_count = append_sample(elapsed_time_arr=self.__elapsed_time_arr, pv_arr=self.__pv_arr,
-                                            sample_count=self.__sample_count, elapsed_time=elapsed_time,
-                                            pulse_meter_pv=pulse_meter_pv)
+    def __store_sample(self, elapsed_time: float, flow_rate: float) -> None:
+        self.__flow_rate_label.setText(f'Flow rate {flow_rate:.{flow_rate_decimal_places}f} LPM')
+        self.__sample_count = append_sample(elapsed_time_arr=self.__elapsed_time_arr,
+                                            flow_rate_arr=self.__flow_rate_arr, sample_count=self.__sample_count,
+                                            elapsed_time=elapsed_time, flow_rate=flow_rate)
 
     def __show_read_failure(self, error_message: str) -> None:
-        font: QFont = self.__pv_label.font()
-        font.setPointSize(pv_error_font_size)
+        font: QFont = self.__flow_rate_label.font()
+        font.setPointSize(flow_rate_error_font_size)
         font.setBold(False)
-        self.__pv_label.setFont(font)
+        self.__flow_rate_label.setFont(font)
 
-        self.__pv_label.setWordWrap(True)
-        self.__pv_label.setText(f'Communication error: {error_message}')
+        self.__flow_rate_label.setWordWrap(True)
+        self.__flow_rate_label.setText(f'Communication error: {error_message}')
 
     def __redraw_graph(self) -> None:
         if self.__sample_count == 0:
             return
 
         elapsed_time_arr = self.__elapsed_time_arr[:self.__sample_count]
-        self.__pv_curve.setData(x=elapsed_time_arr, y=self.__pv_arr[:self.__sample_count])
+        self.__flow_rate_curve.setData(x=elapsed_time_arr, y=self.__flow_rate_arr[:self.__sample_count])
 
         window_start_time: float = calculate_graph_window_start_time(latest_elapsed_time=elapsed_time_arr[-1],
                                                                      graph_time_window=graph_time_window)
@@ -243,11 +246,12 @@ class PulseMeterWindow(QWidget):
         self.__plot_widget.getPlotItem().setYRange(default_y_axis_min, default_y_axis_max, padding=0)
 
     def __update_y_axis_range(self, elapsed_time_arr: np.ndarray, window_start_time: float) -> None:
-        should_use_default_range: bool = check_visible_pv_in_range(elapsed_time_arr=elapsed_time_arr,
-                                                                   pv_arr=self.__pv_arr[:self.__sample_count],
-                                                                   window_start_time=window_start_time,
-                                                                   range_min=default_y_axis_min,
-                                                                   range_max=default_y_axis_max)
+        flow_rate_arr = self.__flow_rate_arr[:self.__sample_count]
+        should_use_default_range: bool = check_visible_flow_rate_in_range(elapsed_time_arr=elapsed_time_arr,
+                                                                          flow_rate_arr=flow_rate_arr,
+                                                                          window_start_time=window_start_time,
+                                                                          range_min=default_y_axis_min,
+                                                                          range_max=default_y_axis_max)
 
         # this runs at every redraw, so the view box is only touched when the y axis mode changes
         if should_use_default_range == self.__is_y_axis_default_range:
@@ -273,11 +277,11 @@ def apply_graphics_settings() -> None:
 
 
 def main() -> None:
-    """Run the pulse meter window until the user closes it."""
+    """Run the flow meter window until the user closes it."""
     apply_graphics_settings()
 
     application = QApplication(sys.argv)
-    window = PulseMeterWindow()
+    window = FlowMeterWindow()
     window.show()
 
     sys.exit(application.exec())

@@ -171,6 +171,19 @@
 | object | `{"flow_status": "fault"}`, 펄스미터 미연결 |
 | RSSI / SNR | -39 dBm / 13.8 dB |
 
+### FT-210 유량계 연결 (2026-11-23)
+
+펄스미터 대신 FT-210을 연결하고 유량 범위를 0~2 LPM(0.01 단위)으로 바꾼 펌웨어와 코덱을 적용했다.
+
+| 항목 | 값 |
+|---|---|
+| 시각 | 21:41:07 KST |
+| data | `008b` |
+| object | `{"flow_status": "normal", "flow_lpm": 1.39, "flow_raw": 139}` |
+| FT-210 전면 표시 | 1.37 (같은 무렵) |
+
+- ChirpStack은 `flow_raw`도 실수로 바꿔 내보낸다 (`139.0`).
+
 ## 6. 운영 명령
 
 ```bash
@@ -188,5 +201,5 @@ mosquitto_sub -h 127.0.0.1 -t 'application/+/device/+/event/up' -v
 - [ ] Join 지연 원인 확인 (보드와 게이트웨이 거리)
 - [ ] 데이터 수집 프로그램: MQTT `event/up` 구독 → DB 저장
 - [ ] 웹 서버 (유저 장치용 HTTP)
-- [ ] 장치 프로필 Measurements에 `flow_lpm` 등록 (펄스미터 연결 후)
+- [ ] 장치 프로필 Measurements에 `flow_lpm` 등록
 - [ ] ChirpStack 정식 릴리스로 교체 여부
