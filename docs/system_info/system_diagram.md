@@ -43,7 +43,7 @@ FT-210 (KOT-EX)                                            RAK4631 + RAK5802 + R
 | PC | - | Local Monitoring | 보드와 USB로 통신 | - |
 | LoRa Gateway | TF-GW1 (RAK7289V2) | - | 보드와 LoRaWAN으로 통신, Wi-Fi Router와 Ethernet으로 연결 | [TF-GW1 조사 정리](gateway/thingsfirst_tf-gw1_gateway.md) |
 | Wi-Fi Router | - | - | 게이트웨이, 라즈베리파이, User Device를 연결 | - |
-| Raspberry Pi 5 | - | LoRaWAN Network Server (ChirpStack), Gateway Bridge (UDP → MQTT), MQTT Broker (Pi internal only), Data Collection (MQTT → SQLite), Web-Server (Flask, port 5000) | 네트워크 서버와 MQTT 브로커 운영 중. 2026-11-23 웹 서버가 업링크를 SQLite에 저장하고 유량 화면을 제공 (수동 실행) | [ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md) |
+| Raspberry Pi 5 | - | LoRaWAN Network Server (ChirpStack), Gateway Bridge (UDP → MQTT), MQTT Broker (Pi internal only), Data Collection (MQTT → SQLite), Web-Server (Flask, port 5000) | 네트워크 서버와 MQTT 브로커 운영 중. 2026-11-23 웹 서버가 업링크를 SQLite에 저장하고 유량 화면을 제공 (systemd 서비스 `water-leakage-web`, 부팅 시 자동 시작) | [ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md) |
 | User Device | - | - | Wi-Fi Router를 거쳐 HTTP로 접속 | - |
 
 LoRa Client Board의 모듈 역할은 다음과 같다.
@@ -117,4 +117,4 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 | `src/host/main_gui.py`, `src/host/utils/board_link.py` | 보드 USB(COM6)의 `flow=` 줄을 읽어 유량 그래프 표시 (y축 기본 0~2 LPM). 실행은 `src/host/run_main_gui.bat` |
 | `src/host/main.py`, `src/host/utils/flow_meter.py` | PC에서 USB-RS485 어댑터로 FT-210 순시유량 읽기 (보드를 거치지 않는 구성) |
 
-라즈베리파이의 ChirpStack과 MQTT 브로커는 설정해 동작 중이다 ([ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md)). 데이터 수집, 저장, 웹 화면은 `src/server/web_server.py`가 한 프로세스로 맡는다. Pi에서 `~/water_leakage`를 기준으로 `/home/pi/miniconda3/envs/python-dev/bin/python -s src/server/web_server.py`로 직접 실행한다 (부팅 시 자동 시작하지 않음).
+라즈베리파이의 ChirpStack과 MQTT 브로커는 설정해 동작 중이다 ([ChirpStack 서버 정리](chirp_stack_server/chirpstack_server.md)). 데이터 수집, 저장, 웹 화면은 `src/server/web_server.py`가 한 프로세스로 맡는다. Pi에서는 저장소를 `~/workspace/water_leakage`에 clone해 두고, systemd 서비스 `water-leakage-web`(`src/server/water-leakage-web.service`, 2026-11-23 등록)으로 부팅 시 자동 실행한다. 상태는 `systemctl status water-leakage-web`, 로그는 `journalctl -u water-leakage-web`으로 보고, 코드를 바꾸면 `git pull` 뒤 `sudo systemctl restart water-leakage-web`을 실행한다.
