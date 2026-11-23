@@ -63,7 +63,7 @@ LoRa Client Board의 모듈 역할은 다음과 같다.
 | LoRa Client Board ↔ LoRa Gateway | LoRaWAN (KR920) | 양방향 | Class A, OTAA, LoRaWAN 1.0.2 / RP 1.0.2 rev B, 업링크 FPort 1, 유량 레코드 2바이트 페이로드 | 2026-11-18 라즈베리파이 ChirpStack으로 Join과 30초 주기 업링크, 디코딩 확인. 2026-11-23 유량 레코드 형식 펌웨어와 코덱을 적용해 디코딩 확인 |
 | LoRa Gateway ↔ Wi-Fi Router | Ethernet (UDP 1700) | 양방향 | Work Mode: Packet forwarder, Protocol: Semtech UDP GWMP, 서버 라즈베리파이 `192.168.0.6` UDP 1700. 게이트웨이 주소 `192.168.0.4` | 2026-11-23 iptime 공유기 망에서 확인, DHCP 예약 안 함 |
 | Raspberry Pi 5 ↔ Wi-Fi Router | Ethernet (UDP, HTTP) | 양방향 | 주소 `192.168.0.6`. 게이트웨이 UDP 1700 수신, ChirpStack 웹 UI 8080. MQTT 브로커는 Pi 내부(127.0.0.1)에서만 | 2026-11-23 iptime 공유기 망에서 확인, DHCP 예약 안 함 |
-| User Device ↔ Wi-Fi Router | Wi-Fi (HTTP) | 양방향 | `http://192.168.0.6:5000` (Pi 웹 서버) | 2026-11-23 같은 공유기 망의 PC에서 접속 확인, 핸드폰은 미확인 |
+| User Device ↔ Wi-Fi Router | Wi-Fi (HTTP) | 양방향 | `http://192.168.0.6:5000` (Pi 웹 서버) | 2026-11-23 같은 공유기 망의 PC와 핸드폰에서 화면 확인 |
 
 세부 내용은 그림에 없고 관련 문서와 시험에서 가져왔다. 상태는 각 칸에 날짜가 없으면 정리한 날짜 기준이다.
 
